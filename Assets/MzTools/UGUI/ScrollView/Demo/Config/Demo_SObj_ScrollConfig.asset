@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ca26608548086c64cb67436c7d2ae4f3, type: 3}
+  m_Name: Demo_SObj_ScrollConfig
+  m_EditorClassIdentifier: 
+  arrayItemInfo: 
+  - name: Sword
+    sprite: {fileID: 21300000, guid: a5d0554669ce72e45a7b2d2a0c6db12d, type: 3}
+    desc: 
+  - name: Club
+    sprite: {fileID: 21300000, guid: d69ffbf1e1786b94f8921af8d09ed9c4, type: 3}
+    desc: 
+  - name: Reinforced Club
+    sprite: {fileID: 21300000, guid: 8e6a8ecfec4542242b12a4036d8062fc, type: 3}
+    desc: 
+  - name: Mace
+    sprite: {fileID: 21300000, guid: d281f17baf886ff42bda019a85b70a5a, type: 3}
+    desc: 
+  - name: Smith Hammer
+    sprite: {fileID: 21300000, guid: 1d1edb3e8f73f194c9c992548edafc1e, type: 3}
+    desc: 
+  - name: War Hammer
+    sprite: {fileID: 21300000, guid: 3d6a7fa5a9562ad4cb7db09521a01cc9, type: 3}
+    desc: 
+  - name: Maul
+    sprite: {fileID: 21300000, guid: 7e4eff1f2a2415a408867097c397bc8f, type: 3}
+    desc: 
+  - name: Hand Axe
+    sprite: {fileID: 21300000, guid: f036bfa0aec4a9f44a1129a89d19fe1e, type: 3}
+    desc: 
+  - name: Battle Axe
+    sprite: {fileID: 21300000, guid: 8a3a441060a23c042af040a99f45e405, type: 3}
+    desc: 
+  - name: Infantry Axe
+    sprite: {fileID: 21300000, guid: 808dd5f159144ae449de109d98efc82b, type: 3}
+    desc: 

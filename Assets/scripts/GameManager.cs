@@ -10,7 +10,9 @@ public class GameManager : MonoBehaviour
     [Header("UI Panels & Controls")]
     [SerializeField] private GameObject introPanel;
     [SerializeField] private GameObject gamePanel;
+    [SerializeField] private GameObject successPanel;
     [SerializeField] private Button startButton;
+    [SerializeField] private Button startOverButton;
     [SerializeField] private RectTransform scorePanel;
     [SerializeField] private RectTransform landmarkPanel;
     [SerializeField] private Button hintButton;
@@ -24,6 +26,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private ParticleSystem successEffect; // New ParticleSystem for correct placement
 
     [SerializeField] private AudioClip successSound;
+    [SerializeField] private AudioClip backgroundMusic;
     private AudioSource audioSource;
 
     [Header("Landmarks")]
@@ -31,9 +34,11 @@ public class GameManager : MonoBehaviour
     [SerializeField] private GameObject landmarkButtonPrefab;
     [SerializeField] private Transform landmarkButtonContainer;
     [SerializeField] private List<Landmark> landmarks;
+    private List<Landmark> initialLandmarks;
 
     [Header("Managers")]
     [SerializeField] private ScoreManager scoreManager;
+    
 
     // CanvasGroups for UI toggles
     private CanvasGroup hintCanvasGroup;
@@ -54,39 +59,75 @@ public class GameManager : MonoBehaviour
     private Vector2 scorePanelStartPos;
     private Vector2 landmarkPanelStartPos;
 
-    void Start()
+   void Start()
+{
+    audioSource = gameObject.AddComponent<AudioSource>();
+    audioSource.playOnAwake = false;
+
+    if (backgroundMusic != null)
     {
-
-        // ... (existing Start code)
-        audioSource = gameObject.AddComponent<AudioSource>();
-        audioSource.playOnAwake = false;
-
-        if (scoreManager == null)
-            Debug.LogError("GameManager: ScoreManager reference is missing.");
-
-        // Cache and hide panels
-        scorePanelStartPos = scorePanel.anchoredPosition;
-        landmarkPanelStartPos = landmarkPanel.anchoredPosition;
-        scorePanel.anchoredPosition = new Vector2(-500, scorePanelStartPos.y);
-        landmarkPanel.anchoredPosition = new Vector2(500, landmarkPanelStartPos.y);
-
-        // Ensure CanvasGroups
-        hintCanvasGroup = hintButton.GetComponent<CanvasGroup>() ?? hintButton.gameObject.AddComponent<CanvasGroup>();
-        hintCanvasGroup.alpha = 0;
-        landmarkCanvasGroup = landmarkPanel.GetComponent<CanvasGroup>() ?? landmarkPanel.gameObject.AddComponent<CanvasGroup>();
-        landmarkCanvasGroup.blocksRaycasts = true;
-
-        // Wire UI
-        startButton.onClick.AddListener(OnStartClicked);
-        hintButton.onClick.AddListener(ShowHint);
-
-        PopulateLandmarkPanel();
-        dragRotate.ZoomToDefault();
-
-        // Start the pulsing animation for the Start button
-        UIAnimator.Instance.Pulse(startButton.gameObject);
+        audioSource.clip = backgroundMusic;
+        audioSource.loop = true;
+        audioSource.volume = 0.3f;
+        audioSource.Play();
+    }
+    else
+    {
+        Debug.LogWarning("Background music clip is not assigned in GameManager!");
     }
 
+    if (scoreManager == null)
+        Debug.LogError("GameManager: ScoreManager reference is missing.");
+
+    scorePanelStartPos = scorePanel.anchoredPosition;
+    landmarkPanelStartPos = landmarkPanel.anchoredPosition;
+    scorePanel.anchoredPosition = new Vector2(-500, scorePanelStartPos.y);
+    landmarkPanel.anchoredPosition = new Vector2(500, landmarkPanelStartPos.y);
+
+    if (successPanel != null)
+    {
+        successPanel.SetActive(false);
+    }
+    else
+    {
+        Debug.LogWarning("Success panel is not assigned in GameManager!");
+    }
+
+    hintCanvasGroup = hintButton.GetComponent<CanvasGroup>() ?? hintButton.gameObject.AddComponent<CanvasGroup>();
+    hintCanvasGroup.alpha = 0;
+    landmarkCanvasGroup = landmarkPanel.GetComponent<CanvasGroup>() ?? landmarkPanel.gameObject.AddComponent<CanvasGroup>();
+    landmarkCanvasGroup.blocksRaycasts = true;
+
+    startButton.onClick.AddListener(OnStartClicked);
+    hintButton.onClick.AddListener(ShowHint);
+
+    if (startOverButton != null)
+    {
+        startOverButton.onClick.AddListener(StartOver);
+    }
+    else
+    {
+        Debug.LogWarning("Start Over button is not assigned in GameManager!");
+    }
+
+    // Safely initialize initialLandmarks
+    if (landmarks != null)
+    {
+        initialLandmarks = new List<Landmark>(landmarks);
+    }
+    else
+    {
+        initialLandmarks = new List<Landmark>();
+        Debug.LogWarning("Landmarks list is null in GameManager! Initial landmarks list will be empty.");
+    }
+
+    PopulateLandmarkPanel();
+    dragRotate.ZoomToDefault();
+
+    UIAnimator.Instance.Pulse(startButton.gameObject);
+}
+
+   
     private void OnStartClicked()
     {
         // Stop the pulsing animation
@@ -106,6 +147,8 @@ public class GameManager : MonoBehaviour
         state = GameState.Idle;
     }
 
+[SerializeField] private RectTransform landmarkContent;  // Assign to Scroll View → Viewport → Content
+
 private void PopulateLandmarkPanel()
 {
     if (landmarks == null || landmarks.Count == 0)
@@ -113,6 +156,10 @@ private void PopulateLandmarkPanel()
         Debug.LogWarning("GameManager: No landmarks assigned.");
         return;
     }
+
+    // Clear any existing buttons
+    foreach (Transform child in landmarkContent)
+        Destroy(child.gameObject);
 
     int index = 0;
     foreach (var lm in landmarks)
@@ -123,36 +170,39 @@ private void PopulateLandmarkPanel()
             continue;
         }
 
-        var btnObj = Instantiate(landmarkButtonPrefab, landmarkButtonContainer);
+        // Instantiate the UI button under the carousel content
+        var btnObj = Instantiate(landmarkButtonPrefab, landmarkContent);
+        
+        // Set icon sprite & size
         var img = btnObj.GetComponent<Image>();
         if (img != null && lm.icon != null)
         {
             img.sprite = lm.icon;
-            RectTransform imgRect = img.GetComponent<RectTransform>();
-            imgRect.sizeDelta = lm.iconSize;
             img.preserveAspect = true;
+            img.rectTransform.sizeDelta = lm.iconSize;
 
-            // Set the button's RectTransform to match the icon size
-            RectTransform btnRect = btnObj.GetComponent<RectTransform>();
+            // Match the button’s RectTransform
+            var btnRect = btnObj.GetComponent<RectTransform>();
             btnRect.sizeDelta = lm.iconSize;
-
-            // Center the button in the layout
-            btnRect.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRect.anchorMax = new Vector2(0.5f, 0.5f);
-            btnRect.pivot = new Vector2(0.5f, 0.5f);
+            btnRect.anchorMin = btnRect.anchorMax = btnRect.pivot = new Vector2(0.5f, 0.5f);
         }
 
+        // Hook up drag handler
         var handler = btnObj.AddComponent<LandmarkDragHandler>();
         handler.gameManager = this;
-        handler.landmark = lm;
+        handler.landmark    = lm;
 
+        // Pop‑in animation
         UIAnimator.Instance.PopIn(btnObj, 0.5f, Ease.OutBack);
-        btnObj.GetComponent<RectTransform>().DOScale(1f, 0.5f).SetDelay(index * 0.1f);
+        btnObj.GetComponent<RectTransform>()
+              .DOScale(1f, 0.5f)
+              .SetDelay(index * 0.1f);
 
         index++;
     }
 
-    LayoutRebuilder.ForceRebuildLayoutImmediate(landmarkButtonContainer.GetComponent<RectTransform>());
+    // Force the layout to rebuild so the carousel script sees the new children
+    LayoutRebuilder.ForceRebuildLayoutImmediate(landmarkContent);
 }
 
    public void BeginDrag(Landmark lm, GameObject button)
@@ -172,7 +222,7 @@ private void PopulateLandmarkPanel()
     hintText.text = string.Empty;
 
     // Add selection effect on the landmark button
-    UIAnimator.Instance.Pulse(currentLandmarkButton, 1.5f, 0.5f, Ease.InOutSine);
+    //UIAnimator.Instance.Pulse(currentLandmarkButton, 1.5f, 0.5f, Ease.InOutSine);
 
     state = GameState.Dragging;
 }
@@ -196,31 +246,73 @@ private void PopulateLandmarkPanel()
         }
     }
 
-    public void EndDrag()
-    {
-        if (state != GameState.Dragging) return;
-        state = GameState.Feedback;
+   public void EndDrag()
+{
+    if (state != GameState.Dragging) return;
+    state = GameState.Feedback;
 
-        if (!hasMovedEnough)
+    if (!hasMovedEnough)
+    {
+        ResetDrag();
+        return;
+    }
+
+    float dist = Vector3.Distance(
+        currentLandmark.transform.position,
+        currentLandmarkData.correctPosition.position
+    );
+    bool success = dist <= currentLandmarkData.tolerance;
+
+    if (success)
+        HandleCorrectPlacement();
+    else
+        HandleWrongPlacement();
+
+    ResetDrag();
+
+    // Check if all landmarks are placed
+    if (scoreManager.GetScore() == landmarks.Count)
+    {
+        state = GameState.Complete;
+        ShowGameSuccess();
+    }
+    else
+    {
+        state = GameState.Idle;
+    }
+}
+
+private void ShowGameSuccess()
+{
+    if (successPanel != null)
+    {
+        successPanel.SetActive(true);
+        UIAnimator.Instance.Fade(successPanel, 1, 1f, Ease.Linear);
+        UIAnimator.Instance.PopIn(successPanel, 1f, Ease.OutBack);
+
+        // Disable interactions except for the success panel
+        dragRotate.SetRotationEnabled(false);
+        landmarkCanvasGroup.blocksRaycasts = false;
+        hintCanvasGroup.blocksRaycasts = false;
+        hintCanvasGroup.alpha = 0;
+        hintText.text = string.Empty;
+
+        // Ensure the Start Over button is interactable
+        if (startOverButton != null)
         {
-            ResetDrag();
-            return;
+            startOverButton.interactable = true;
         }
 
-        float dist = Vector3.Distance(
-            currentLandmark.transform.position,
-            currentLandmarkData.correctPosition.position
-        );
-        bool success = dist <= currentLandmarkData.tolerance;
-
-        if (success)
-            HandleCorrectPlacement();
-        else
-            HandleWrongPlacement();
-
-        ResetDrag();
-        state = scoreManager.GetScore() >= landmarks.Count ? GameState.Complete : GameState.Idle;
+        if (audioSource != null && audioSource.isPlaying)
+        {
+            audioSource.Stop();
+        }
     }
+    else
+    {
+        Debug.LogWarning("Success panel is not assigned in GameManager!");
+    }
+}
 
 private void HandleCorrectPlacement()
 {
@@ -319,4 +411,71 @@ private void HandleCorrectPlacement()
             UIAnimator.Instance.Slide(hintText.GetComponent<RectTransform>(), Vector2.zero, 0.5f);
         }
     }
+
+private void StartOver()
+{
+    // Hide the success panel
+    if (successPanel != null)
+    {
+        CanvasGroup successCanvasGroup = successPanel.GetComponent<CanvasGroup>();
+        if (successCanvasGroup == null)
+        {
+            successCanvasGroup = successPanel.AddComponent<CanvasGroup>();
+        }
+        successCanvasGroup.DOFade(0, 0.5f).SetEase(Ease.Linear).OnComplete(() =>
+        {
+            successPanel.SetActive(false);
+        });
+    }
+
+    // Reset game state
+    state = GameState.Idle;
+
+    // Reset score
+    scoreManager.ResetScore();
+
+    // Reset landmarks (restore the original list)
+    landmarks.Clear();
+    if (initialLandmarks != null && initialLandmarks.Count > 0)
+    {
+        landmarks.AddRange(initialLandmarks);
+    }
+    else
+    {
+        Debug.LogWarning("No initial landmarks available to restore! Game will start with an empty landmarks list.");
+    }
+
+    // Destroy all placed landmarks on the globe
+    foreach (Transform child in landmarkContainer)
+    {
+        Destroy(child.gameObject);
+    }
+
+    // Repopulate the landmark panel
+    foreach (Transform child in landmarkButtonContainer)
+    {
+        Destroy(child.gameObject);
+    }
+    PopulateLandmarkPanel();
+
+    // Re-enable interactions
+    dragRotate.SetRotationEnabled(true);
+    landmarkCanvasGroup.blocksRaycasts = true;
+    hintCanvasGroup.blocksRaycasts = true;
+    hintCanvasGroup.alpha = 1;
+    hintText.text = string.Empty;
+
+    // Restart background music
+    if (backgroundMusic != null && audioSource != null)
+    {
+        audioSource.clip = backgroundMusic;
+        audioSource.loop = true;
+        audioSource.volume = 0.3f;
+        audioSource.Play();
+    }
+
+    // Reset camera zoom
+    dragRotate.ZoomToDefault();
+}
+
 }
