@@ -459,7 +459,7 @@ MonoBehaviour:
   dragRotate: {fileID: 963194229}
   globe: {fileID: 300255455}
   globeRadius: 1.02
-  explosionEffect: {fileID: 2197626818615626613, guid: 1095a5c9f65bfbe4383f63d5d1886c65, type: 3}
+  explosionEffect: {fileID: 6356438961120104147, guid: d8703a33a4eb0b84a875202fde23e8f7, type: 3}
   successEffect: {fileID: 6211125795773073634, guid: 12a56ee4630040c4eb17ae9707ed4cef, type: 3}
   successSound: {fileID: 8300000, guid: 7d7cd46d887c2ac4a9fd87c40b5d92c3, type: 3}
   backgroundMusic: {fileID: 8300000, guid: 8bb6d196e42dd3047a9cdc4d3c7bc603, type: 3}
@@ -2199,8 +2199,9 @@ MonoBehaviour:
   zoomSensitivity: 8
   smoothTime: 0.1
   minDistance: 2
-  maxDistance: 15
-  introDistance: 20
+  maxDistance: 8
+  introDistance: 15
+  autoRotationSpeed: 15
 --- !u!1 &1026130564
 GameObject:
   m_ObjectHideFlags: 0
@@ -5311,6 +5312,7 @@ PrefabInstance:
     - {fileID: 6524017926819784833, guid: 0507899f061b9df43a276d838467c9bf, type: 3}
     - {fileID: -8932020589470871755, guid: 0507899f061b9df43a276d838467c9bf, type: 3}
     - {fileID: -119452998309192501, guid: 0507899f061b9df43a276d838467c9bf, type: 3}
+    - {fileID: -8511996527471854794, guid: 0507899f061b9df43a276d838467c9bf, type: 3}
     m_AddedGameObjects:
     - targetCorrespondingSourceObject: {fileID: -8679921383154817045, guid: 0507899f061b9df43a276d838467c9bf, type: 3}
       insertIndex: -1
@@ -5912,7 +5914,7 @@ Canvas:
   m_Enabled: 1
   serializedVersion: 3
   m_RenderMode: 0
-  m_Camera: {fileID: 0}
+  m_Camera: {fileID: 963194227}
   m_PlaneDistance: 100
   m_PixelPerfect: 0
   m_ReceivesEvents: 1

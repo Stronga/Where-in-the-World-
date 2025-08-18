@@ -19,7 +19,7 @@ public class ScrollSnapOnWheel : MonoBehaviour, IScrollHandler
             _step = 1f / (_itemCount - 1);
         else
             _step = 1f;
-        
+
         // Disable inertia for crisp snapping
         scrollRect.inertia = false;
     }
@@ -40,4 +40,5 @@ public class ScrollSnapOnWheel : MonoBehaviour, IScrollHandler
         // Snap immediately
         scrollRect.horizontalNormalizedPosition = idx * _step;
     }
+    
 }

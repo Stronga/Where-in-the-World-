@@ -127,7 +127,7 @@ public class GameManager : MonoBehaviour
     UIAnimator.Instance.Pulse(startButton.gameObject);
 }
 
-   
+
     private void OnStartClicked()
     {
         // Stop the pulsing animation
@@ -144,7 +144,30 @@ public class GameManager : MonoBehaviour
         UIAnimator.Instance.Fade(hintButton.gameObject, 1, 1f);
         UIAnimator.Instance.PopIn(hintButton.gameObject);
 
+        // Start the globe introduction sequence
+        StartGlobeIntroSequence();
+
         state = GameState.Idle;
+        
+    }
+
+    private void StartGlobeIntroSequence()
+    {
+        // Disable rotation during the intro sequence
+        dragRotate.SetRotationEnabled(false);
+
+        // First zoom in to the globe over 1 seconds
+        dragRotate.ZoomToDefaultAnimated(1f);
+
+        // After zoom completes, start auto-rotation
+        DOVirtual.DelayedCall(2.5f, () =>
+        {
+            // Re-enable rotation for user interaction
+            dragRotate.SetRotationEnabled(true);
+
+            // Start the auto-rotation
+            dragRotate.StartAutoRotation();
+        });
     }
 
 [SerializeField] private RectTransform landmarkContent;  // Assign to Scroll View → Viewport → Content

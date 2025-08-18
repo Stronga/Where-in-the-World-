@@ -10,7 +10,10 @@ public class DragRotate : MonoBehaviour
     [SerializeField] private float smoothTime = 0.1f;
     [SerializeField] private float minDistance = 2f;
     [SerializeField] private float maxDistance = 10f;
-    [SerializeField] private float introDistance = 15f;
+    [SerializeField] private float introDistance = 25f;
+    
+    [Header("Auto Rotation")]
+    [SerializeField] private float autoRotationSpeed = 15f;
     
     private Vector3 lastMousePosition;
     private Quaternion targetRotation;
@@ -19,6 +22,8 @@ public class DragRotate : MonoBehaviour
     private float distanceVelocity = 0f;
     private float defaultDistance;
     private bool rotationEnabled = true;
+    private bool autoRotationEnabled = false;
+    private bool hasUserInteracted = false;
 
     void Start()
     {
@@ -35,62 +40,101 @@ public class DragRotate : MonoBehaviour
         targetRotation = target.rotation;
     }
 
-            void LateUpdate()
+    void LateUpdate()
+    {
+        if (target == null) return;
+
+        bool overUI = EventSystem.current != null 
+                    && EventSystem.current.IsPointerOverGameObject();
+
+        // Check for user interaction
+        if (!hasUserInteracted && !overUI)
         {
-            if (target == null) return;
-
-            // are we over any UI element?
-            bool overUI = EventSystem.current != null 
-                        && EventSystem.current.IsPointerOverGameObject();
-
-            // only rotate if enabled *and* the cursor isn't on UI (or dragging)
-            if (rotationEnabled && !overUI)
+            if (Input.GetMouseButtonDown(0) || Input.GetMouseButton(0) || 
+                Input.GetAxis("Mouse ScrollWheel") != 0)
             {
-                if (Input.GetMouseButtonDown(0))
-                    lastMousePosition = Input.mousePosition;
-                else if (Input.GetMouseButton(0))
-                {
-                    Vector3 delta = Input.mousePosition - lastMousePosition;
-                    float rotX = -delta.y * rotationSensitivity * Time.deltaTime;
-                    float rotY = -delta.x * rotationSensitivity * Time.deltaTime;
-                    targetRotation *= Quaternion.AngleAxis(rotY, Vector3.up);
-                    targetRotation *= Quaternion.AngleAxis(rotX, Vector3.right);
-                    lastMousePosition = Input.mousePosition;
-                }
-                target.rotation = Quaternion.Slerp(
-                    target.rotation,
-                    targetRotation,
-                    Time.deltaTime / smoothTime
-                );
+                hasUserInteracted = true;
+                autoRotationEnabled = false;
             }
-
-            // optionally also skip zoom when over UI:
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
-            if (scroll != 0 && !overUI)
-            {
-                targetDistance = Mathf.Clamp(
-                    targetDistance - scroll * zoomSensitivity,
-                    minDistance, maxDistance
-                );
-            }
-
-            // camera positioning (always run)
-            currentDistance = Mathf.SmoothDamp(
-                currentDistance, targetDistance, ref distanceVelocity, smoothTime
-            );
-            Vector3 dir = (transform.position - target.position).normalized;
-            transform.position = target.position + dir * currentDistance;
-            transform.LookAt(target);
         }
 
+        // Auto rotation when enabled
+        if (autoRotationEnabled && !hasUserInteracted)
+        {
+            targetRotation *= Quaternion.AngleAxis(autoRotationSpeed * Time.deltaTime, Vector3.up);
+        }
+
+        // Manual rotation
+        if (rotationEnabled && !overUI && hasUserInteracted)
+        {
+            if (Input.GetMouseButtonDown(0))
+                lastMousePosition = Input.mousePosition;
+            else if (Input.GetMouseButton(0))
+            {
+                Vector3 delta = Input.mousePosition - lastMousePosition;
+                float rotX = -delta.y * rotationSensitivity * Time.deltaTime;
+                float rotY = -delta.x * rotationSensitivity * Time.deltaTime;
+                targetRotation *= Quaternion.AngleAxis(rotY, Vector3.up);
+                targetRotation *= Quaternion.AngleAxis(rotX, Vector3.right);
+                lastMousePosition = Input.mousePosition;
+            }
+        }
+
+        target.rotation = Quaternion.Slerp(
+            target.rotation,
+            targetRotation,
+            Time.deltaTime / smoothTime
+        );
+
+        // Zoom functionality
+        float scroll = Input.GetAxis("Mouse ScrollWheel");
+        if (scroll != 0 && !overUI)
+        {
+            targetDistance = Mathf.Clamp(
+                targetDistance - scroll * zoomSensitivity,
+                minDistance, maxDistance
+            );
+        }
+
+        // Camera positioning
+        currentDistance = Mathf.SmoothDamp(
+            currentDistance, targetDistance, ref distanceVelocity, smoothTime
+        );
+        Vector3 dir = (transform.position - target.position).normalized;
+        transform.position = target.position + dir * currentDistance;
+        transform.LookAt(target);
+    }
 
     public void ZoomToDefault()
     {
         targetDistance = defaultDistance;
     }
 
+    public void ZoomToDefaultAnimated(float duration = 2f)
+    {
+        DOTween.To(() => targetDistance, x => targetDistance = x, defaultDistance, duration)
+               .SetEase(Ease.OutQuad);
+    }
+
     public void SetRotationEnabled(bool enabled)
     {
         rotationEnabled = enabled;
+    }
+
+    public void StartAutoRotation()
+    {
+        autoRotationEnabled = true;
+        hasUserInteracted = false;
+    }
+
+    public void StopAutoRotation()
+    {
+        autoRotationEnabled = false;
+    }
+
+    public void ResetInteractionState()
+    {
+        hasUserInteracted = false;
+        autoRotationEnabled = false;
     }
 }
