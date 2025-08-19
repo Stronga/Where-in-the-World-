@@ -465,7 +465,7 @@ MonoBehaviour:
   backgroundMusic: {fileID: 8300000, guid: 8bb6d196e42dd3047a9cdc4d3c7bc603, type: 3}
   landmarkContainer: {fileID: 410677467}
   landmarkButtonPrefab: {fileID: 8120163762485673092, guid: 12a4e5df5033dd14a92011b33e27aa24, type: 3}
-  landmarkButtonContainer: {fileID: 0}
+  landmarkButtonContainer: {fileID: 2116546908}
   landmarks:
   - name: Liberty2
     prefab: {fileID: 505148235267900027, guid: dba5f92754c05ff4789edef779b340e5, type: 3}
@@ -973,6 +973,55 @@ SphereCollider:
   serializedVersion: 3
   m_Radius: 1.02
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!1 &420586221
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 420586223}
+  - component: {fileID: 420586222}
+  m_Layer: 0
+  m_Name: HandTracker
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &420586222
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 420586221}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: e08243b5b2d268245b49818a8ef9858b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  gameManager: {fileID: 203109970}
+  previewImage: {fileID: 0}
+  useKeyboardSimulation: 1
+  showInstructions: 1
+  projectionDepth: 5
+--- !u!4 &420586223
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 420586221}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0.03818, y: -0.08092, z: 0.67917}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &458871415
 GameObject:
   m_ObjectHideFlags: 0
@@ -7147,3 +7196,4 @@ SceneRoots:
   - {fileID: 192441356}
   - {fileID: 483851526}
   - {fileID: 732377047}
+  - {fileID: 420586223}
