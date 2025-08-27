@@ -4,6 +4,7 @@ using UnityEngine.EventSystems;
 using TMPro;
 using DG.Tweening;
 using System.Collections.Generic;
+using System.Collections;
 
 public class GameManager : MonoBehaviour
 {
@@ -126,6 +127,138 @@ public class GameManager : MonoBehaviour
 
     UIAnimator.Instance.Pulse(startButton.gameObject);
 }
+
+
+//all hand gestures
+
+public void HandleHandInput(Vector3 handPosition, string gesture)
+{
+    Debug.Log($"Gesture: {gesture} at position: {handPosition}");
+    
+    switch (gesture)
+    {
+        case "select":
+            HandleHandSelection(handPosition);
+            break;
+            
+        case "grab":
+            HandleHandGrab(handPosition);
+            break;
+            
+        case "place":
+            HandleHandPlace(handPosition);
+            break;
+    }
+}
+
+void HandleHandSelection(Vector3 handPos)
+{
+    Debug.Log($"HandleHandSelection called - Current state: {state}");
+    
+    if (state != GameState.Idle) 
+    {
+        Debug.Log($"Selection blocked - state is {state}, need Idle state");
+        return;
+    }
+    
+    // Find the MzUGUIScrollCtrl component
+    MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
+    if (scrollCtrl == null)
+    {
+        Debug.LogError("❌ MzUGUIScrollCtrl not found!");
+        return;
+    }
+    
+    // Get all scroll items
+    var scrollItems = scrollCtrl.GetItems();
+    if (scrollItems == null || scrollItems.Count == 0)
+    {
+        Debug.Log("❌ No scroll items found");
+        return;
+    }
+    
+    Debug.Log($"📍 MzTools scroll system has {scrollItems.Count} items");
+    
+    // Find the currently centered item in the scroll view
+    // We'll use distance-based detection since MzTools uses world positions
+    MzTool.MzUGUIScrollItem closestItem = null;
+    LandmarkDragHandler closestHandler = null;
+    float closestDistance = float.MaxValue;
+    
+    // Get the center position (viewport center)
+    Vector3 centerPos = scrollCtrl.transform.position;
+    
+    foreach (var scrollItem in scrollItems)
+    {
+        if (scrollItem != null && scrollItem.gameObject.activeInHierarchy)
+        {
+            LandmarkDragHandler handler = scrollItem.GetComponent<LandmarkDragHandler>();
+            if (handler != null && handler.landmark != null)
+            {
+                // Calculate distance from center
+                float distance = Vector3.Distance(scrollItem.transform.position, centerPos);
+                Debug.Log($"  - {handler.landmark.name}: distance = {distance:F2}");
+                
+                if (distance < closestDistance)
+                {
+                    closestDistance = distance;
+                    closestItem = scrollItem;
+                    closestHandler = handler;
+                }
+            }
+        }
+    }
+    
+    // Select the closest landmark
+    if (closestHandler != null && closestItem != null)
+    {
+        Debug.Log($"✅ Selected closest landmark: {closestHandler.landmark.name} (distance: {closestDistance:F2})");
+        
+        // Optional: Tell MzTools to stick to this item (centers it properly)
+        scrollCtrl.SetAndStickItem(closestItem);
+        
+        // Start dragging the landmark
+        BeginDrag(closestHandler.landmark, closestItem.gameObject);
+        return;
+    }
+    
+    Debug.Log("❌ No landmarks found in scroll items");
+}
+
+
+void HandleHandGrab(Vector3 handPos)
+{
+    Debug.Log($"HandleHandGrab called - Current state: {state}");
+    
+    if (state == GameState.Idle)
+    {
+        // If not dragging, try to select a landmark
+        HandleHandSelection(handPos);
+    }
+    else if (state == GameState.Dragging)
+    {
+        // If already dragging, update the drag position
+        Vector3 screenPos = Camera.main.WorldToScreenPoint(handPos);
+        UpdateDrag(screenPos);
+    }
+}
+
+void HandleHandPlace(Vector3 handPos)
+{
+    Debug.Log($"HandleHandPlace called - Current state: {state}");
+    
+    if (state == GameState.Dragging)
+    {
+        // Place the landmark at the current position
+        Debug.Log("✅ Placing landmark with hand gesture");
+        EndDrag();
+    }
+    else
+    {
+        Debug.Log($"Cannot place - state is {state}, need Dragging state");
+    }
+}
+
 
 
     private void OnStartClicked()
@@ -389,12 +522,97 @@ private void HandleCorrectPlacement()
         Debug.LogWarning($"HandleCorrectPlacement: correctPosition or currentLandmark not set for '{currentLandmarkData?.name}'");
     }
 
+    // 🔧 FIX: Find and destroy the UI button for this landmark
+    GameObject buttonToDestroy = null;
     if (currentLandmarkButton != null)
     {
-        UIAnimator.Instance.Stop(currentLandmarkButton);
-        Destroy(currentLandmarkButton);
+        // If we have the button reference (normal UI interaction)
+        buttonToDestroy = currentLandmarkButton;
+        Debug.Log($"✅ Found UI button for '{currentLandmarkData?.name}' (normal UI interaction)");
+    }
+    else if (currentLandmarkData != null && landmarkContent != null)
+    {
+        // If we don't have the button reference (hand gesture interaction)
+        // Find the button with matching landmark in the UI
+        foreach (Transform child in landmarkContent)
+        {
+            LandmarkDragHandler handler = child.GetComponent<LandmarkDragHandler>();
+            if (handler != null && handler.landmark == currentLandmarkData)
+            {
+                buttonToDestroy = child.gameObject;
+                Debug.Log($"✅ Found UI button for '{currentLandmarkData.name}' (hand gesture interaction)");
+                break;
+            }
+        }
+    }
+
+    // Destroy the button and refresh MzTools
+    if (buttonToDestroy != null)
+    {
+        UIAnimator.Instance.Stop(buttonToDestroy);
+        Destroy(buttonToDestroy);
+        
+        // 🚀 CRITICAL: Refresh MzTools scroll system after item removal
+        StartCoroutine(RefreshMzToolsScrollAfterDestroy());
+    }
+
+    // 🔧 FIX: Remove the landmark from the available list
+    if (currentLandmarkData != null && landmarks.Contains(currentLandmarkData))
+    {
+        landmarks.Remove(currentLandmarkData);
+        Debug.Log($"✅ Removed landmark '{currentLandmarkData.name}' from available list. {landmarks.Count} landmarks remaining.");
+        
+        // Check if game is complete
+        if (landmarks.Count == 0)
+        {
+            Debug.Log("🎉 All landmarks placed! Game complete!");
+        }
     }
 }
+
+// 🔧 NEW METHOD: Refresh MzTools scroll system
+private IEnumerator RefreshMzToolsScrollAfterDestroy()
+{
+    // Wait one frame for the Destroy to take effect
+    yield return null;
+    
+    // Find the MzTools scroll controller
+    MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
+    if (scrollCtrl != null)
+    {
+        Debug.Log("🔄 Refreshing MzTools scroll system...");
+        
+        // Clear the internal items list
+        var items = scrollCtrl.GetItems();
+        items.Clear();
+        
+        // Reload items from current children
+        scrollCtrl.LoadItems();
+        
+        var newItems = scrollCtrl.GetItems();
+        Debug.Log($"📍 MzTools scroll refreshed: {newItems.Count} items remaining");
+        
+        // If there are still items, stick to the first one to center the view
+        if (newItems.Count > 0)
+        {
+            Debug.Log($"🎯 Centering view on first remaining item");
+            scrollCtrl.SetAndStickItem(newItems[0]);
+        }
+        else
+        {
+            Debug.Log("📍 No items remaining in scroll view");
+        }
+    }
+    else
+    {
+        Debug.LogWarning("❌ MzUGUIScrollCtrl not found for refresh");
+    }
+}
+
+
+
+
+
 
     private void HandleWrongPlacement()
     {
