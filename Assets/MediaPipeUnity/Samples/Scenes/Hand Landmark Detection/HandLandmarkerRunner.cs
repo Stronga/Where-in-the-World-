@@ -8,13 +8,14 @@ using System.Collections;
 using Mediapipe.Tasks.Vision.HandLandmarker;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Events;
 
 namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 {
   public class HandLandmarkerRunner : VisionTaskApiRunner<HandLandmarker>
   {
     [SerializeField] private HandLandmarkerResultAnnotationController _handLandmarkerResultAnnotationController;
-
+    public UnityEvent<HandLandmarkerResult> OnHandLandmarksOutput;
     private Experimental.TextureFramePool _textureFramePool;
 
     public readonly HandLandmarkDetectionConfig config = new HandLandmarkDetectionConfig();
@@ -154,6 +155,11 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
     private void OnHandLandmarkDetectionOutput(HandLandmarkerResult result, Image image, long timestamp)
     {
       _handLandmarkerResultAnnotationController.DrawLater(result);
+      MainThreadDispatcher.Instance.Enqueue(() => {
+    OnHandLandmarksOutput?.Invoke(result);
+});
+
     }
+    
   }
 }

@@ -24,7 +24,7 @@ public class GameManager : MonoBehaviour
     [SerializeField] private Transform globe;
     [SerializeField] private float globeRadius = 1f;
     [SerializeField] private ParticleSystem explosionEffect;
-    [SerializeField] private ParticleSystem successEffect; // New ParticleSystem for correct placement
+    [SerializeField] private ParticleSystem successEffect; 
 
     [SerializeField] private AudioClip successSound;
     [SerializeField] private AudioClip backgroundMusic;
@@ -39,7 +39,10 @@ public class GameManager : MonoBehaviour
 
     [Header("Managers")]
     [SerializeField] private ScoreManager scoreManager;
-    
+
+    // NEW: Reference to the scroll view's content panel
+    [SerializeField] private RectTransform landmarkContent; 
+
 
     // CanvasGroups for UI toggles
     private CanvasGroup hintCanvasGroup;
@@ -60,335 +63,285 @@ public class GameManager : MonoBehaviour
     private Vector2 scorePanelStartPos;
     private Vector2 landmarkPanelStartPos;
 
-   void Start()
-{
-    audioSource = gameObject.AddComponent<AudioSource>();
-    audioSource.playOnAwake = false;
-
-    if (backgroundMusic != null)
+    void Start()
     {
-        audioSource.clip = backgroundMusic;
-        audioSource.loop = true;
-        audioSource.volume = 0.3f;
-        audioSource.Play();
-    }
-    else
-    {
-        Debug.LogWarning("Background music clip is not assigned in GameManager!");
-    }
+        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource.playOnAwake = false;
 
-    if (scoreManager == null)
-        Debug.LogError("GameManager: ScoreManager reference is missing.");
-
-    scorePanelStartPos = scorePanel.anchoredPosition;
-    landmarkPanelStartPos = landmarkPanel.anchoredPosition;
-    scorePanel.anchoredPosition = new Vector2(-500, scorePanelStartPos.y);
-    landmarkPanel.anchoredPosition = new Vector2(500, landmarkPanelStartPos.y);
-
-    if (successPanel != null)
-    {
-        successPanel.SetActive(false);
-    }
-    else
-    {
-        Debug.LogWarning("Success panel is not assigned in GameManager!");
-    }
-
-    hintCanvasGroup = hintButton.GetComponent<CanvasGroup>() ?? hintButton.gameObject.AddComponent<CanvasGroup>();
-    hintCanvasGroup.alpha = 0;
-    landmarkCanvasGroup = landmarkPanel.GetComponent<CanvasGroup>() ?? landmarkPanel.gameObject.AddComponent<CanvasGroup>();
-    landmarkCanvasGroup.blocksRaycasts = true;
-
-    startButton.onClick.AddListener(OnStartClicked);
-    hintButton.onClick.AddListener(ShowHint);
-
-    if (startOverButton != null)
-    {
-        startOverButton.onClick.AddListener(StartOver);
-    }
-    else
-    {
-        Debug.LogWarning("Start Over button is not assigned in GameManager!");
-    }
-
-    // Safely initialize initialLandmarks
-    if (landmarks != null)
-    {
-        initialLandmarks = new List<Landmark>(landmarks);
-    }
-    else
-    {
-        initialLandmarks = new List<Landmark>();
-        Debug.LogWarning("Landmarks list is null in GameManager! Initial landmarks list will be empty.");
-    }
-
-    PopulateLandmarkPanel();
-    dragRotate.ZoomToDefault();
-
-    UIAnimator.Instance.Pulse(startButton.gameObject);
-}
-
-
-//all hand gestures
-
-public void HandleHandInput(Vector3 handPosition, string gesture)
-{
-    Debug.Log($"Gesture: {gesture} at position: {handPosition}");
-    
-    switch (gesture)
-    {
-        case "select":
-            HandleHandSelection(handPosition);
-            break;
-            
-        case "grab":
-            HandleHandGrab(handPosition);
-            break;
-            
-        case "place":
-            HandleHandPlace(handPosition);
-            break;
-    }
-}
-
-void HandleHandSelection(Vector3 handPos)
-{
-    Debug.Log($"HandleHandSelection called - Current state: {state}");
-    
-    if (state != GameState.Idle) 
-    {
-        Debug.Log($"Selection blocked - state is {state}, need Idle state");
-        return;
-    }
-    
-    // Find the MzUGUIScrollCtrl component
-    MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
-    if (scrollCtrl == null)
-    {
-        Debug.LogError("❌ MzUGUIScrollCtrl not found!");
-        return;
-    }
-    
-    // Get all scroll items
-    var scrollItems = scrollCtrl.GetItems();
-    if (scrollItems == null || scrollItems.Count == 0)
-    {
-        Debug.Log("❌ No scroll items found");
-        return;
-    }
-    
-    Debug.Log($"📍 MzTools scroll system has {scrollItems.Count} items");
-    
-    // Find the currently centered item in the scroll view
-    // We'll use distance-based detection since MzTools uses world positions
-    MzTool.MzUGUIScrollItem closestItem = null;
-    LandmarkDragHandler closestHandler = null;
-    float closestDistance = float.MaxValue;
-    
-    // Get the center position (viewport center)
-    Vector3 centerPos = scrollCtrl.transform.position;
-    
-    foreach (var scrollItem in scrollItems)
-    {
-        if (scrollItem != null && scrollItem.gameObject.activeInHierarchy)
+        if (backgroundMusic != null)
         {
-            LandmarkDragHandler handler = scrollItem.GetComponent<LandmarkDragHandler>();
-            if (handler != null && handler.landmark != null)
-            {
-                // Calculate distance from center
-                float distance = Vector3.Distance(scrollItem.transform.position, centerPos);
-                Debug.Log($"  - {handler.landmark.name}: distance = {distance:F2}");
+            audioSource.clip = backgroundMusic;
+            audioSource.loop = true;
+            audioSource.volume = 0.3f;
+            audioSource.Play();
+        }
+        else
+        {
+            Debug.LogWarning("Background music clip is not assigned in GameManager!");
+        }
+
+        if (scoreManager == null)
+            Debug.LogError("GameManager: ScoreManager reference is missing.");
+
+        scorePanelStartPos = scorePanel.anchoredPosition;
+        landmarkPanelStartPos = landmarkPanel.anchoredPosition;
+        scorePanel.anchoredPosition = new Vector2(-500, scorePanelStartPos.y);
+        landmarkPanel.anchoredPosition = new Vector2(500, landmarkPanelStartPos.y);
+
+        if (successPanel != null)
+        {
+            successPanel.SetActive(false);
+        }
+        else
+        {
+            Debug.LogWarning("Success panel is not assigned in GameManager!");
+        }
+
+        hintCanvasGroup = hintButton.GetComponent<CanvasGroup>() ?? hintButton.gameObject.AddComponent<CanvasGroup>();
+        hintCanvasGroup.alpha = 0;
+        landmarkCanvasGroup = landmarkPanel.GetComponent<CanvasGroup>() ?? landmarkPanel.gameObject.AddComponent<CanvasGroup>();
+        landmarkCanvasGroup.blocksRaycasts = true;
+
+        startButton.onClick.AddListener(OnStartClicked);
+        hintButton.onClick.AddListener(ShowHint);
+
+        if (startOverButton != null)
+        {
+            startOverButton.onClick.AddListener(StartOver);
+        }
+        else
+        {
+            Debug.LogWarning("Start Over button is not assigned in GameManager!");
+        }
+
+        if (landmarks != null)
+        {
+            initialLandmarks = new List<Landmark>(landmarks);
+        }
+        else
+        {
+            initialLandmarks = new List<Landmark>();
+            Debug.LogWarning("Landmarks list is null in GameManager! Initial landmarks list will be empty.");
+        }
+
+        PopulateLandmarkPanel();
+        dragRotate.ZoomToDefault();
+
+        UIAnimator.Instance.Pulse(startButton.gameObject);
+    }
+
+    // ##################################################################
+    // ## NEW: HAND GESTURE INTEGRATION
+    // ##################################################################
+    
+    /// <summary>
+    /// Public entry point for hand gesture input from a MediaPipe controller.
+    /// </summary>
+    /// <param name="handPosition">The world position of the hand.</param>
+    /// <param name="gesture">A string representing the recognized gesture (e.g., "select", "grab", "place").</param>
+    public void HandleHandInput(Vector3 handPosition, string gesture)
+    {
+        Debug.Log($"Gesture: {gesture} at position: {handPosition}");
+        
+        switch (gesture)
+        {
+            case "select":
+                // Handles selecting the centered landmark and starting the drag.
+                HandleHandSelection();
+                break;
                 
-                if (distance < closestDistance)
-                {
-                    closestDistance = distance;
-                    closestItem = scrollItem;
-                    closestHandler = handler;
-                }
+            case "grab":
+                // If we aren't dragging, "grab" initiates a drag.
+                // If we are already dragging, it updates the landmark position.
+                HandleHandGrab(handPosition);
+                break;
+                
+            case "place":
+                // If a landmark is being dragged, this places it.
+                HandleHandPlace();
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Selects the landmark currently centered in the scroll view and begins dragging.
+    /// </summary>
+  private void HandleHandSelection()
+    {
+        if (state != GameState.Idle) return;
+
+        // Find the MzUGUIScrollCtrl component which manages the carousel
+        MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
+        if (scrollCtrl == null)
+        {
+            Debug.LogError("MzUGUIScrollCtrl not found! Cannot determine which landmark is selected.");
+            return;
+        }
+
+        // --- REPLACEMENT LOGIC ---
+        // Instead of GetCurrentItem, we find the item closest to the carousel's center.
+        GameObject centeredItem = null;
+        float smallestDistance = float.MaxValue;
+        Vector3 centerPosition = scrollCtrl.transform.position; // The center of the carousel UI element
+
+        var scrollItems = scrollCtrl.GetItems(); // Assuming this method returns all item GameObjects
+        if (scrollItems == null || scrollItems.Count == 0)
+        {
+             Debug.LogWarning("No items found in the scroll view.");
+             return;
+        }
+
+        foreach (var item in scrollItems)
+        {
+            float distance = Vector3.Distance(item.transform.position, centerPosition);
+            if (distance < smallestDistance)
+            {
+                smallestDistance = distance;
+                centeredItem = item.gameObject;
             }
+        }
+        // --- END REPLACEMENT LOGIC ---
+
+        if (centeredItem == null)
+        {
+            Debug.LogWarning("Could not determine the centered item.");
+            return;
+        }
+    
+        LandmarkDragHandler handler = centeredItem.GetComponent<LandmarkDragHandler>();
+        if (handler != null)
+        {
+            Debug.Log($"Hand selected landmark: {handler.landmark.name}");
+            // Use the existing BeginDrag logic, passing the button we found.
+            BeginDrag(handler.landmark, centeredItem.gameObject);
         }
     }
     
-    // Select the closest landmark
-    if (closestHandler != null && closestItem != null)
+    /// <summary>
+    /// Updates the drag position based on hand location, or initiates a drag if not already dragging.
+    /// </summary>
+    private void HandleHandGrab(Vector3 handPos)
     {
-        Debug.Log($"✅ Selected closest landmark: {closestHandler.landmark.name} (distance: {closestDistance:F2})");
-        
-        // Optional: Tell MzTools to stick to this item (centers it properly)
-        scrollCtrl.SetAndStickItem(closestItem);
-        
-        // Start dragging the landmark
-        BeginDrag(closestHandler.landmark, closestItem.gameObject);
-        return;
+        if (state == GameState.Idle)
+        {
+            // If not dragging, a "grab" acts like a "select" to start the process.
+            HandleHandSelection();
+        }
+        else if (state == GameState.Dragging)
+        {
+            // If already dragging, convert the 3D hand position to a 2D screen position
+            // and update the landmark's location on the globe.
+            Vector3 screenPos = Camera.main.WorldToScreenPoint(handPos);
+            UpdateDrag(screenPos);
+        }
     }
     
-    Debug.Log("❌ No landmarks found in scroll items");
-}
-
-
-void HandleHandGrab(Vector3 handPos)
-{
-    Debug.Log($"HandleHandGrab called - Current state: {state}");
-    
-    if (state == GameState.Idle)
+    /// <summary>
+    /// Finalizes the placement of a landmark.
+    /// </summary>
+    private void HandleHandPlace()
     {
-        // If not dragging, try to select a landmark
-        HandleHandSelection(handPos);
+        if (state == GameState.Dragging)
+        {
+            Debug.Log("Placing landmark with hand gesture.");
+            EndDrag();
+        }
     }
-    else if (state == GameState.Dragging)
-    {
-        // If already dragging, update the drag position
-        Vector3 screenPos = Camera.main.WorldToScreenPoint(handPos);
-        UpdateDrag(screenPos);
-    }
-}
 
-void HandleHandPlace(Vector3 handPos)
-{
-    Debug.Log($"HandleHandPlace called - Current state: {state}");
-    
-    if (state == GameState.Dragging)
-    {
-        // Place the landmark at the current position
-        Debug.Log("✅ Placing landmark with hand gesture");
-        EndDrag();
-    }
-    else
-    {
-        Debug.Log($"Cannot place - state is {state}, need Dragging state");
-    }
-}
-
-
+    // ##################################################################
+    // ## END: HAND GESTURE INTEGRATION
+    // ##################################################################
 
     private void OnStartClicked()
     {
-        // Stop the pulsing animation
         UIAnimator.Instance.Stop(startButton.gameObject);
-
-        // Fade out intro
-        UIAnimator.Instance.Fade(introPanel, 0, 1f, Ease.Linear);
         introPanel.GetComponent<CanvasGroup>().DOFade(0, 1f).OnComplete(() => introPanel.SetActive(false));
-
-        // Show game UI
         gamePanel.SetActive(true);
         UIAnimator.Instance.Bounce(scorePanel, scorePanelStartPos, 1f);
         UIAnimator.Instance.Bounce(landmarkPanel, landmarkPanelStartPos, 1f);
         UIAnimator.Instance.Fade(hintButton.gameObject, 1, 1f);
         UIAnimator.Instance.PopIn(hintButton.gameObject);
-
-        // Start the globe introduction sequence
         StartGlobeIntroSequence();
-
         state = GameState.Idle;
-        
     }
 
     private void StartGlobeIntroSequence()
     {
-        // Disable rotation during the intro sequence
         dragRotate.SetRotationEnabled(false);
-
-        // First zoom in to the globe over 1 seconds
         dragRotate.ZoomToDefaultAnimated(1f);
-
-        // After zoom completes, start auto-rotation
         DOVirtual.DelayedCall(2.5f, () =>
         {
-            // Re-enable rotation for user interaction
             dragRotate.SetRotationEnabled(true);
-
-            // Start the auto-rotation
             dragRotate.StartAutoRotation();
         });
     }
 
-[SerializeField] private RectTransform landmarkContent;  // Assign to Scroll View → Viewport → Content
-
-private void PopulateLandmarkPanel()
-{
-    if (landmarks == null || landmarks.Count == 0)
+    private void PopulateLandmarkPanel()
     {
-        Debug.LogWarning("GameManager: No landmarks assigned.");
-        return;
-    }
-
-    // Clear any existing buttons
-    foreach (Transform child in landmarkContent)
-        Destroy(child.gameObject);
-
-    int index = 0;
-    foreach (var lm in landmarks)
-    {
-        if (lm.prefab == null)
+        if (landmarks == null || landmarks.Count == 0)
         {
-            Debug.LogError($"Landmark '{lm.name}' missing prefab.");
-            continue;
+            Debug.LogWarning("GameManager: No landmarks assigned.");
+            return;
         }
 
-        // Instantiate the UI button under the carousel content
-        var btnObj = Instantiate(landmarkButtonPrefab, landmarkContent);
+        foreach (Transform child in landmarkContent)
+            Destroy(child.gameObject);
+
+        int index = 0;
+        foreach (var lm in landmarks)
+        {
+            if (lm.prefab == null)
+            {
+                Debug.LogError($"Landmark '{lm.name}' missing prefab.");
+                continue;
+            }
+
+            var btnObj = Instantiate(landmarkButtonPrefab, landmarkContent);
+            var img = btnObj.GetComponent<Image>();
+            if (img != null && lm.icon != null)
+            {
+                img.sprite = lm.icon;
+                img.preserveAspect = true;
+                img.rectTransform.sizeDelta = lm.iconSize;
+                var btnRect = btnObj.GetComponent<RectTransform>();
+                btnRect.sizeDelta = lm.iconSize;
+                btnRect.anchorMin = btnRect.anchorMax = btnRect.pivot = new Vector2(0.5f, 0.5f);
+            }
+            var handler = btnObj.AddComponent<LandmarkDragHandler>();
+            handler.gameManager = this;
+            handler.landmark = lm;
+            UIAnimator.Instance.PopIn(btnObj, 0.5f, Ease.OutBack);
+            btnObj.GetComponent<RectTransform>().DOScale(1f, 0.5f).SetDelay(index * 0.1f);
+            index++;
+        }
+        LayoutRebuilder.ForceRebuildLayoutImmediate(landmarkContent);
+    }
+
+    public void BeginDrag(Landmark lm, GameObject button)
+    {
+        if (state != GameState.Idle) return;
+
+        state = GameState.Dragging;
+        currentLandmarkData = lm;
+        currentLandmarkButton = button; // This will be the button GameObject from the UI
+        currentLandmark = Instantiate(lm.prefab, landmarkContainer);
+        currentLandmark.transform.position = Vector3.one * 1000f; // Hide it initially
         
-        // Set icon sprite & size
-        var img = btnObj.GetComponent<Image>();
-        if (img != null && lm.icon != null)
-        {
-            img.sprite = lm.icon;
-            img.preserveAspect = true;
-            img.rectTransform.sizeDelta = lm.iconSize;
+        hasMovedEnough = false;
+        // For hand gestures, Input.mousePosition is irrelevant, but we set it for consistency.
+        dragStartPos = Input.mousePosition; 
 
-            // Match the button’s RectTransform
-            var btnRect = btnObj.GetComponent<RectTransform>();
-            btnRect.sizeDelta = lm.iconSize;
-            btnRect.anchorMin = btnRect.anchorMax = btnRect.pivot = new Vector2(0.5f, 0.5f);
-        }
-
-        // Hook up drag handler
-        var handler = btnObj.AddComponent<LandmarkDragHandler>();
-        handler.gameManager = this;
-        handler.landmark    = lm;
-
-        // Pop‑in animation
-        UIAnimator.Instance.PopIn(btnObj, 0.5f, Ease.OutBack);
-        btnObj.GetComponent<RectTransform>()
-              .DOScale(1f, 0.5f)
-              .SetDelay(index * 0.1f);
-
-        index++;
+        dragRotate.SetRotationEnabled(false);
+        landmarkCanvasGroup.blocksRaycasts = false;
+        hintText.text = string.Empty;
     }
-
-    // Force the layout to rebuild so the carousel script sees the new children
-    LayoutRebuilder.ForceRebuildLayoutImmediate(landmarkContent);
-}
-
-   public void BeginDrag(Landmark lm, GameObject button)
-{
-    if (state != GameState.Idle) return;
-
-    currentLandmarkData = lm;
-    currentLandmarkButton = button;
-    currentLandmark = Instantiate(lm.prefab, landmarkContainer);
-    currentLandmark.transform.position = Vector3.one * 1000f;
-
-    dragStartPos = Input.mousePosition;
-    hasMovedEnough = false;
-
-    dragRotate.SetRotationEnabled(false);
-    landmarkCanvasGroup.blocksRaycasts = false;
-    hintText.text = string.Empty;
-
-    // Add selection effect on the landmark button
-    //UIAnimator.Instance.Pulse(currentLandmarkButton, 1.5f, 0.5f, Ease.InOutSine);
-
-    state = GameState.Dragging;
-}
 
     public void UpdateDrag(Vector2 screenPos)
     {
         if (state != GameState.Dragging || currentLandmark == null) return;
 
-        if (!hasMovedEnough && Vector2.Distance(screenPos, dragStartPos) > dragThreshold)
-            hasMovedEnough = true;
+        // With hand gestures, we can consider the drag to have "moved enough" immediately.
+        if (!hasMovedEnough) hasMovedEnough = true; 
 
         if (hasMovedEnough)
         {
@@ -402,217 +355,123 @@ private void PopulateLandmarkPanel()
         }
     }
 
-   public void EndDrag()
-{
-    if (state != GameState.Dragging) return;
-    state = GameState.Feedback;
-
-    if (!hasMovedEnough)
+    public void EndDrag()
     {
+        if (state != GameState.Dragging) return;
+        state = GameState.Feedback;
+
+        // If using hand gestures, we assume movement has occurred.
+        // The check for hasMovedEnough is more for mouse to prevent accidental clicks.
+        if (!hasMovedEnough && currentLandmarkButton != null) // Only check for mouse
+        {
+            ResetDrag();
+            return;
+        }
+
+        float dist = Vector3.Distance(
+            currentLandmark.transform.position,
+            currentLandmarkData.correctPosition.position
+        );
+        bool success = dist <= currentLandmarkData.tolerance;
+
+        if (success)
+            HandleCorrectPlacement();
+        else
+            HandleWrongPlacement();
+
         ResetDrag();
-        return;
-    }
-
-    float dist = Vector3.Distance(
-        currentLandmark.transform.position,
-        currentLandmarkData.correctPosition.position
-    );
-    bool success = dist <= currentLandmarkData.tolerance;
-
-    if (success)
-        HandleCorrectPlacement();
-    else
-        HandleWrongPlacement();
-
-    ResetDrag();
-
-    // Check if all landmarks are placed
-    if (scoreManager.GetScore() == landmarks.Count)
-    {
-        state = GameState.Complete;
-        ShowGameSuccess();
-    }
-    else
-    {
-        state = GameState.Idle;
-    }
-}
-
-private void ShowGameSuccess()
-{
-    if (successPanel != null)
-    {
-        successPanel.SetActive(true);
-        UIAnimator.Instance.Fade(successPanel, 1, 1f, Ease.Linear);
-        UIAnimator.Instance.PopIn(successPanel, 1f, Ease.OutBack);
-
-        // Disable interactions except for the success panel
-        dragRotate.SetRotationEnabled(false);
-        landmarkCanvasGroup.blocksRaycasts = false;
-        hintCanvasGroup.blocksRaycasts = false;
-        hintCanvasGroup.alpha = 0;
-        hintText.text = string.Empty;
-
-        // Ensure the Start Over button is interactable
-        if (startOverButton != null)
-        {
-            startOverButton.interactable = true;
-        }
-
-        if (audioSource != null && audioSource.isPlaying)
-        {
-            audioSource.Stop();
-        }
-    }
-    else
-    {
-        Debug.LogWarning("Success panel is not assigned in GameManager!");
-    }
-}
-
-private void HandleCorrectPlacement()
-{
-    scoreManager.AddScore(1);
-
-    if (currentLandmarkData.correctPosition != null && currentLandmark != null)
-    {
-        Debug.Log($"Snapping landmark to correctPosition: {currentLandmarkData.correctPosition.position}, Current position: {currentLandmark.transform.position}");
-
-        Vector3 targetPos = currentLandmarkData.correctPosition.position;
-        Vector3 normalDir = (targetPos - globe.position).normalized;
-
-        GameObject landmarkToSnap = currentLandmark;
-
-        landmarkToSnap.transform.DOMove(targetPos, 0.5f).SetEase(Ease.InOutQuad);
-        landmarkToSnap.transform.DORotateQuaternion(Quaternion.FromToRotation(Vector3.up, normalDir), 0.5f).SetEase(Ease.InOutQuad).OnComplete(() =>
-        {
-            Debug.Log($"OnComplete callback executed for HandleCorrectPlacement. landmarkToSnap: {(landmarkToSnap != null ? "Valid" : "Null")}");
-            if (landmarkToSnap.TryGetComponent<Collider>(out var col)) col.enabled = false;
-            if (landmarkToSnap.TryGetComponent<Rigidbody>(out var rb)) rb.isKinematic = true;
-
-            if (successEffect != null)
-            {
-                var fx = Instantiate(successEffect, targetPos, Quaternion.identity);
-                fx.transform.localScale = Vector3.one * 0.04f;
-                fx.transform.rotation = Quaternion.FromToRotation(Vector3.up, normalDir);
-                Debug.Log($"Instantiated successEffect at position: {fx.transform.position}, scale: {fx.transform.localScale}, parented to: None");
-                fx.transform.SetParent(landmarkToSnap.transform, true);
-                fx.transform.localPosition = Vector3.zero;
-                fx.Play();
-                Destroy(fx.gameObject, fx.main.duration);
-
-                if (successSound != null && audioSource != null)
-                {
-                    Debug.Log("Playing success sound");
-                    audioSource.PlayOneShot(successSound);
-                }
-                else
-                {
-                    Debug.LogWarning("Success sound or audioSource is missing");
-                }
-            }
-            else
-            {
-                Debug.LogWarning("SuccessEffect is not assigned in GameManager");
-            }
-        });
-    }
-    else
-    {
-        Debug.LogWarning($"HandleCorrectPlacement: correctPosition or currentLandmark not set for '{currentLandmarkData?.name}'");
-    }
-
-    // 🔧 FIX: Find and destroy the UI button for this landmark
-    GameObject buttonToDestroy = null;
-    if (currentLandmarkButton != null)
-    {
-        // If we have the button reference (normal UI interaction)
-        buttonToDestroy = currentLandmarkButton;
-        Debug.Log($"✅ Found UI button for '{currentLandmarkData?.name}' (normal UI interaction)");
-    }
-    else if (currentLandmarkData != null && landmarkContent != null)
-    {
-        // If we don't have the button reference (hand gesture interaction)
-        // Find the button with matching landmark in the UI
-        foreach (Transform child in landmarkContent)
-        {
-            LandmarkDragHandler handler = child.GetComponent<LandmarkDragHandler>();
-            if (handler != null && handler.landmark == currentLandmarkData)
-            {
-                buttonToDestroy = child.gameObject;
-                Debug.Log($"✅ Found UI button for '{currentLandmarkData.name}' (hand gesture interaction)");
-                break;
-            }
-        }
-    }
-
-    // Destroy the button and refresh MzTools
-    if (buttonToDestroy != null)
-    {
-        UIAnimator.Instance.Stop(buttonToDestroy);
-        Destroy(buttonToDestroy);
         
-        // 🚀 CRITICAL: Refresh MzTools scroll system after item removal
-        StartCoroutine(RefreshMzToolsScrollAfterDestroy());
-    }
-
-    // 🔧 FIX: Remove the landmark from the available list
-    if (currentLandmarkData != null && landmarks.Contains(currentLandmarkData))
-    {
-        landmarks.Remove(currentLandmarkData);
-        Debug.Log($"✅ Removed landmark '{currentLandmarkData.name}' from available list. {landmarks.Count} landmarks remaining.");
-        
-        // Check if game is complete
-        if (landmarks.Count == 0)
+        // MODIFIED: Check against the original landmark count, not the dynamic list
+        if (scoreManager.GetScore() == initialLandmarks.Count)
         {
-            Debug.Log("🎉 All landmarks placed! Game complete!");
-        }
-    }
-}
-
-// 🔧 NEW METHOD: Refresh MzTools scroll system
-private IEnumerator RefreshMzToolsScrollAfterDestroy()
-{
-    // Wait one frame for the Destroy to take effect
-    yield return null;
-    
-    // Find the MzTools scroll controller
-    MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
-    if (scrollCtrl != null)
-    {
-        Debug.Log("🔄 Refreshing MzTools scroll system...");
-        
-        // Clear the internal items list
-        var items = scrollCtrl.GetItems();
-        items.Clear();
-        
-        // Reload items from current children
-        scrollCtrl.LoadItems();
-        
-        var newItems = scrollCtrl.GetItems();
-        Debug.Log($"📍 MzTools scroll refreshed: {newItems.Count} items remaining");
-        
-        // If there are still items, stick to the first one to center the view
-        if (newItems.Count > 0)
-        {
-            Debug.Log($"🎯 Centering view on first remaining item");
-            scrollCtrl.SetAndStickItem(newItems[0]);
+            state = GameState.Complete;
+            ShowGameSuccess();
         }
         else
         {
-            Debug.Log("📍 No items remaining in scroll view");
+            state = GameState.Idle;
         }
     }
-    else
+
+    private void ShowGameSuccess()
     {
-        Debug.LogWarning("❌ MzUGUIScrollCtrl not found for refresh");
+        if (successPanel != null)
+        {
+            successPanel.SetActive(true);
+            UIAnimator.Instance.Fade(successPanel, 1, 1f, Ease.Linear);
+            UIAnimator.Instance.PopIn(successPanel, 1f, Ease.OutBack);
+            dragRotate.SetRotationEnabled(false);
+            landmarkCanvasGroup.blocksRaycasts = false;
+            hintCanvasGroup.blocksRaycasts = false;
+            hintCanvasGroup.alpha = 0;
+            hintText.text = string.Empty;
+            if (startOverButton != null) startOverButton.interactable = true;
+            if (audioSource != null && audioSource.isPlaying) audioSource.Stop();
+        }
     }
-}
 
+    private void HandleCorrectPlacement()
+    {
+        scoreManager.AddScore(1);
 
+        if (currentLandmarkData.correctPosition != null && currentLandmark != null)
+        {
+            Vector3 targetPos = currentLandmarkData.correctPosition.position;
+            Vector3 normalDir = (targetPos - globe.position).normalized;
+            currentLandmark.transform.DOMove(targetPos, 0.5f).SetEase(Ease.InOutQuad);
+            currentLandmark.transform.DORotateQuaternion(Quaternion.FromToRotation(Vector3.up, normalDir), 0.5f).SetEase(Ease.InOutQuad);
+            
+            if (successEffect != null)
+            {
+                var fx = Instantiate(successEffect, targetPos, Quaternion.LookRotation(normalDir));
+                Destroy(fx.gameObject, fx.main.duration);
+            }
+            if (successSound != null) audioSource.PlayOneShot(successSound);
+        }
 
+        // MODIFIED: This section is now robust enough for both mouse and hand gestures.
+        GameObject buttonToDestroy = null;
+        if (currentLandmarkButton != null)
+        {
+            // Case 1: Drag was initiated by mouse/touch, so we have a direct reference.
+            buttonToDestroy = currentLandmarkButton;
+        }
+        else if (currentLandmarkData != null)
+        {
+            // Case 2: Drag was initiated by hand gesture, so we need to find the button.
+            foreach (Transform child in landmarkContent)
+            {
+                var handler = child.GetComponent<LandmarkDragHandler>();
+                if (handler != null && handler.landmark == currentLandmarkData)
+                {
+                    buttonToDestroy = child.gameObject;
+                    break;
+                }
+            }
+        }
 
+        if (buttonToDestroy != null)
+        {
+            landmarks.Remove(currentLandmarkData);
+            Destroy(buttonToDestroy);
+            StartCoroutine(RefreshMzToolsScrollAfterDestroy());
+        }
+    }
 
+    // NEW: Coroutine to refresh the MzTools carousel after a button is destroyed.
+    private IEnumerator RefreshMzToolsScrollAfterDestroy()
+    {
+        // Wait one frame for the Destroy operation to complete.
+        yield return null;
+        
+        MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
+        if (scrollCtrl != null)
+        {
+            // Tell the MzTools controller to reload its items from the hierarchy.
+            scrollCtrl.LoadItems();
+            Debug.Log("Refreshed MzTools scroll items.");
+        }
+    }
 
     private void HandleWrongPlacement()
     {
@@ -621,7 +480,6 @@ private IEnumerator RefreshMzToolsScrollAfterDestroy()
         if (explosionEffect != null)
         {
             var fx = Instantiate(explosionEffect, pos, Quaternion.identity);
-            fx.Play();
             Destroy(fx.gameObject, fx.main.duration);
         }
     }
@@ -630,7 +488,6 @@ private IEnumerator RefreshMzToolsScrollAfterDestroy()
     {
         dragRotate.SetRotationEnabled(true);
         landmarkCanvasGroup.blocksRaycasts = true;
-
         currentLandmark = null;
         currentLandmarkData = null;
         currentLandmarkButton = null;
@@ -641,82 +498,39 @@ private IEnumerator RefreshMzToolsScrollAfterDestroy()
         if (state == GameState.Dragging && currentLandmarkData != null)
         {
             hintText.text = currentLandmarkData.hint;
-
-            // Ensure CanvasGroup on hintText
-            CanvasGroup hintTextCanvasGroup = hintText.GetComponent<CanvasGroup>();
-            if (hintTextCanvasGroup == null)
-                hintTextCanvasGroup = hintText.gameObject.AddComponent<CanvasGroup>();
-
-            // Animate the hint text with fade and slide
+            CanvasGroup hintTextCanvasGroup = hintText.GetComponent<CanvasGroup>() ?? hintText.gameObject.AddComponent<CanvasGroup>();
             UIAnimator.Instance.Fade(hintText.gameObject, 1, 0.5f);
             UIAnimator.Instance.Slide(hintText.GetComponent<RectTransform>(), Vector2.zero, 0.5f);
         }
     }
 
-private void StartOver()
-{
-    // Hide the success panel
-    if (successPanel != null)
+    private void StartOver()
     {
-        CanvasGroup successCanvasGroup = successPanel.GetComponent<CanvasGroup>();
-        if (successCanvasGroup == null)
+        if (successPanel != null)
         {
-            successCanvasGroup = successPanel.AddComponent<CanvasGroup>();
+            successPanel.GetComponent<CanvasGroup>().DOFade(0, 0.5f).OnComplete(() => successPanel.SetActive(false));
         }
-        successCanvasGroup.DOFade(0, 0.5f).SetEase(Ease.Linear).OnComplete(() =>
-        {
-            successPanel.SetActive(false);
-        });
-    }
 
-    // Reset game state
-    state = GameState.Idle;
-
-    // Reset score
-    scoreManager.ResetScore();
-
-    // Reset landmarks (restore the original list)
-    landmarks.Clear();
-    if (initialLandmarks != null && initialLandmarks.Count > 0)
-    {
+        state = GameState.Idle;
+        scoreManager.ResetScore();
+        landmarks.Clear();
         landmarks.AddRange(initialLandmarks);
+
+        foreach (Transform child in landmarkContainer) Destroy(child.gameObject);
+        foreach (Transform child in landmarkButtonContainer) Destroy(child.gameObject);
+        
+        PopulateLandmarkPanel();
+
+        dragRotate.SetRotationEnabled(true);
+        landmarkCanvasGroup.blocksRaycasts = true;
+        hintCanvasGroup.blocksRaycasts = true;
+        hintCanvasGroup.alpha = 1;
+        hintText.text = string.Empty;
+
+        if (backgroundMusic != null && audioSource != null)
+        {
+            audioSource.Play();
+        }
+        dragRotate.ZoomToDefault();
     }
-    else
-    {
-        Debug.LogWarning("No initial landmarks available to restore! Game will start with an empty landmarks list.");
-    }
-
-    // Destroy all placed landmarks on the globe
-    foreach (Transform child in landmarkContainer)
-    {
-        Destroy(child.gameObject);
-    }
-
-    // Repopulate the landmark panel
-    foreach (Transform child in landmarkButtonContainer)
-    {
-        Destroy(child.gameObject);
-    }
-    PopulateLandmarkPanel();
-
-    // Re-enable interactions
-    dragRotate.SetRotationEnabled(true);
-    landmarkCanvasGroup.blocksRaycasts = true;
-    hintCanvasGroup.blocksRaycasts = true;
-    hintCanvasGroup.alpha = 1;
-    hintText.text = string.Empty;
-
-    // Restart background music
-    if (backgroundMusic != null && audioSource != null)
-    {
-        audioSource.clip = backgroundMusic;
-        audioSource.loop = true;
-        audioSource.volume = 0.3f;
-        audioSource.Play();
-    }
-
-    // Reset camera zoom
-    dragRotate.ZoomToDefault();
-}
-
 }
