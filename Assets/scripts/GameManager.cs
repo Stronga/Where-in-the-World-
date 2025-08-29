@@ -128,7 +128,11 @@ public class GameManager : MonoBehaviour
     UIAnimator.Instance.Pulse(startButton.gameObject);
 }
 
-
+public bool IsHandRotatingGlobe()
+{
+    // Add this method to check if left hand is rotating
+    return dragRotate != null && dragRotate.IsHandRotating();
+}
 //all hand gestures
 
 public void HandleHandInput(Vector3 handPosition, string gesture)
@@ -365,6 +369,12 @@ private void PopulateLandmarkPanel()
    public void BeginDrag(Landmark lm, GameObject button)
 {
     if (state != GameState.Idle) return;
+
+    if (IsHandRotatingGlobe())
+    {
+        Debug.Log("Cannot start landmark drag - globe is being rotated");
+        return;
+    }
 
     currentLandmarkData = lm;
     currentLandmarkButton = button;

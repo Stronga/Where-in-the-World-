@@ -15,7 +15,12 @@ public class DragRotate : MonoBehaviour
     [Header("Auto Rotation")]
     [SerializeField] private float autoRotationSpeed = 15f;
     
+    [Header("Hand Gesture Control")]
+    [SerializeField] private bool handGestureEnabled = true;
+    [SerializeField] private float handRotationSensitivity = 15f;
+
     private Vector3 lastMousePosition;
+    private Vector3 lastHandPosition;
     private Quaternion targetRotation;
     private float currentDistance;
     private float targetDistance;
@@ -24,6 +29,8 @@ public class DragRotate : MonoBehaviour
     private bool rotationEnabled = true;
     private bool autoRotationEnabled = false;
     private bool hasUserInteracted = false;
+    private bool isHandRotating = false;
+
 
     void Start()
     {
@@ -44,13 +51,13 @@ public class DragRotate : MonoBehaviour
     {
         if (target == null) return;
 
-        bool overUI = EventSystem.current != null 
+        bool overUI = EventSystem.current != null
                     && EventSystem.current.IsPointerOverGameObject();
 
         // Check for user interaction
         if (!hasUserInteracted && !overUI)
         {
-            if (Input.GetMouseButtonDown(0) || Input.GetMouseButton(0) || 
+            if (Input.GetMouseButtonDown(0) || Input.GetMouseButton(0) ||
                 Input.GetAxis("Mouse ScrollWheel") != 0)
             {
                 hasUserInteracted = true;
@@ -137,4 +144,57 @@ public class DragRotate : MonoBehaviour
         hasUserInteracted = false;
         autoRotationEnabled = false;
     }
+    
+    public void StartHandRotation(Vector3 handPosition)
+{
+    if (!handGestureEnabled || !rotationEnabled) return;
+    
+    isHandRotating = true;
+    lastHandPosition = handPosition;
+    hasUserInteracted = true;
+    autoRotationEnabled = false;
+    
+    Debug.Log($"Started hand rotation at {handPosition}");
+}
+
+public void UpdateHandRotation(Vector3 handPosition)
+{
+    if (!isHandRotating || !handGestureEnabled || !rotationEnabled) return;
+    
+    Vector3 delta = handPosition - lastHandPosition;
+    
+    // Convert world space delta to rotation
+    float rotX = -delta.y * handRotationSensitivity;
+    float rotY = -delta.x * handRotationSensitivity;
+    
+    targetRotation *= Quaternion.AngleAxis(rotY, Vector3.up);
+    targetRotation *= Quaternion.AngleAxis(rotX, Vector3.right);
+    
+    lastHandPosition = handPosition;
+    
+    Debug.Log($"Hand rotation delta: {delta}");
+}
+
+public void EndHandRotation()
+{
+    if (!isHandRotating) return;
+    
+    isHandRotating = false;
+    Debug.Log("Ended hand rotation");
+}
+
+public bool IsHandRotating()
+{
+    return isHandRotating;
+}
+
+public void SetHandGestureEnabled(bool enabled)
+{
+    handGestureEnabled = enabled;
+    if (!enabled && isHandRotating)
+    {
+        EndHandRotation();
+    }
+}
+
 }
