@@ -28,6 +28,7 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
 
     protected override IEnumerator Run()
     {
+      config.NumHands = 2;
       Debug.Log($"Delegate = {config.Delegate}");
       Debug.Log($"Image Read Mode = {config.ImageReadMode}");
       Debug.Log($"Running Mode = {config.RunningMode}");
@@ -151,8 +152,10 @@ namespace Mediapipe.Unity.Sample.HandLandmarkDetection
       }
     }
 
+  public HandLandmarkerResult LatestResult { get; private set; }
     private void OnHandLandmarkDetectionOutput(HandLandmarkerResult result, Image image, long timestamp)
     {
+      LatestResult = result;
       _handLandmarkerResultAnnotationController.DrawLater(result);
     }
   }

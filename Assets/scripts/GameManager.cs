@@ -134,21 +134,22 @@ public class GameManager : MonoBehaviour
 public void HandleHandInput(Vector3 handPosition, string gesture)
 {
     Debug.Log($"Gesture: {gesture} at position: {handPosition}");
+    Debug.Log($"Hand Input: Gesture={gesture}, Pos={handPosition}");
     
     switch (gesture)
-    {
-        case "select":
-            HandleHandSelection(handPosition);
-            break;
-            
-        case "grab":
-            HandleHandGrab(handPosition);
-            break;
-            
-        case "place":
-            HandleHandPlace(handPosition);
-            break;
-    }
+        {
+            case "select":
+                HandleHandSelection(handPosition);
+                break;
+
+            case "grab":
+                HandleHandGrab(handPosition);
+                break;
+
+            case "place":
+                HandleHandPlace(handPosition);
+                break;
+        }
 }
 
 void HandleHandSelection(Vector3 handPos)
@@ -162,7 +163,7 @@ void HandleHandSelection(Vector3 handPos)
     }
     
     // Find the MzUGUIScrollCtrl component
-    MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
+    MzTool.MzUGUIScrollCtrl scrollCtrl = FindFirstObjectByType<MzTool.MzUGUIScrollCtrl>();
     if (scrollCtrl == null)
     {
         Debug.LogError("❌ MzUGUIScrollCtrl not found!");
@@ -577,7 +578,7 @@ private IEnumerator RefreshMzToolsScrollAfterDestroy()
     yield return null;
     
     // Find the MzTools scroll controller
-    MzTool.MzUGUIScrollCtrl scrollCtrl = FindObjectOfType<MzTool.MzUGUIScrollCtrl>();
+    MzTool.MzUGUIScrollCtrl scrollCtrl = FindFirstObjectByType<MzTool.MzUGUIScrollCtrl>();
     if (scrollCtrl != null)
     {
         Debug.Log("🔄 Refreshing MzTools scroll system...");
