@@ -1088,6 +1088,19 @@ MonoBehaviour:
   fistThreshold: 0.2
   useKeyboardSimulation: 1
   showInstructions: 0
+  pinchEnterThreshold: 0.035
+  pinchExitThreshold: 0.075
+  pinchHoldTime: 0.18
+  releaseHoldTime: 0.22
+  trackingLossGraceTime: 0.35
+  useFistForGrab: 0
+  restrictGrabToRightHand: 1
+  showHandDebugInfo: 0
+  useSingleHandAsRightHand: 0
+  swapHandRoles: 0
+  mirrorInputX: 0
+  useIndexTipForPointer: 1
+  dragRotate: {fileID: 963194229}
 --- !u!4 &420586223
 Transform:
   m_ObjectHideFlags: 0
@@ -2332,6 +2345,10 @@ MonoBehaviour:
   maxDistance: 8
   introDistance: 15
   autoRotationSpeed: 15
+  handGestureEnabled: 1
+  handRotationSensitivity: 15
+  handRotationSmoothTime: 0.08
+  handReleaseEaseDuration: 0.2
 --- !u!1001 &1006057040
 PrefabInstance:
   m_ObjectHideFlags: 0

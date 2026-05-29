@@ -1,396 +1,546 @@
+using System.Collections.Generic;
+using Mediapipe.Tasks.Components.Containers;
+using Mediapipe.Tasks.Vision.HandLandmarker;
+using Mediapipe.Unity.Sample.HandLandmarkDetection;
 using UnityEngine;
 using UnityEngine.UI;
-using Mediapipe.Tasks.Vision.HandLandmarker;
-using Mediapipe.Tasks.Components.Containers;  // Add this for NormalizedLandmark
-using Mediapipe.Unity.Sample.HandLandmarkDetection;
-using System.Collections.Generic;
-using System.Linq;  // Add this if missing
 
 public class HandTracker : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private GameManager gameManager;
-    [SerializeField] private HandLandmarkerRunner handLandmarkerRunner;  // Reference to HandLandmarkerRunner
-    [SerializeField] private RawImage previewImage;  // Optional: Webcam preview
+    [SerializeField] private HandLandmarkerRunner handLandmarkerRunner;
+    [SerializeField] private RawImage previewImage;
 
     [Header("Settings")]
-    [SerializeField] private float projectionDepth = 5f;  // Depth for projecting hand pos
-    [SerializeField] private float pinchThreshold = 0.05f;  // Normalized dist for pinch ("select")
-    [SerializeField] private float fistThreshold = 0.2f;  // Avg normalized dist for fist ("grab")
-    [SerializeField] private bool useKeyboardSimulation = true;  // Fallback if no hands detected
+    [SerializeField] private float projectionDepth = 5f;
+    [SerializeField] private float pinchThreshold = 0.05f;
+    [SerializeField] private float fistThreshold = 0.2f;
+    [SerializeField] private bool useKeyboardSimulation = true;
     [SerializeField] private bool showInstructions = true;
 
+    [Header("Gesture Stability")]
+    [SerializeField] private float pinchEnterThreshold = 0.035f;
+    [SerializeField] private float pinchExitThreshold = 0.075f;
+    [SerializeField] private float pinchHoldTime = 0.18f;
+    [SerializeField] private float releaseHoldTime = 0.22f;
+    [SerializeField] private float trackingLossGraceTime = 0.35f;
+    [SerializeField] private bool useFistForGrab = false;
+
     [Header("Hand Preference")]
-    [SerializeField] private bool restrictGrabToRightHand = true;  // Toggle for right-hand restriction
-    [SerializeField] private bool showHandDebugInfo = true;       // Show hand detection info
+    [SerializeField] private bool restrictGrabToRightHand = true;
+    [SerializeField] private bool showHandDebugInfo = false;
+    [SerializeField] private bool useSingleHandAsRightHand = false;
+    [SerializeField] private bool swapHandRoles = false;
+
+    [Header("Coordinate Mapping")]
+    [SerializeField] private bool mirrorInputX = false;
+    [SerializeField] private bool useIndexTipForPointer = true;
 
     [Header("Dual Hand Control")]
-    [SerializeField] private DragRotate dragRotate; // Reference to DragRotate component
+    [SerializeField] private DragRotate dragRotate;
 
-    private string leftHandGesture = "open";
-    private string rightHandGesture = "open";
-    private string lastLeftHandGesture = "open";
-    private string lastRightHandGesture = "open";
+    private const string OpenGesture = "open";
+    private const string LeftPinchGesture = "pinch";
+    private const string HandSelectGesture = "handSelect";
+    private const string HandPlaceGesture = "handPlace";
+    private const string KeyboardSelectGesture = "select";
+    private const string KeyboardGrabGesture = "grab";
+    private const string KeyboardPlaceGesture = "place";
+
+    private readonly StableHoldState leftPinchState = new StableHoldState();
+    private readonly StableHoldState rightHoldState = new StableHoldState();
+
+    private string leftHandGesture = OpenGesture;
+    private string rightHandGesture = OpenGesture;
     private Vector3 leftHandPosition = Vector3.zero;
     private Vector3 rightHandPosition = Vector3.zero;
-    private bool leftHandPinching = false;
-    private string currentHandType = "unknown";  // Track which hand is being used
 
-    private string lastGesture = "open";
-    private string currentGesture = "open";
     private WebCamTexture webCamTexture;
 
-    void Start()
+    private sealed class StableHoldState
     {
-        // Optional: Start webcam for preview
+        public bool RawHeld;
+        public bool Active;
+        public float HoldStartedAt = -1f;
+        public float ReleaseStartedAt = -1f;
+        public float MissingStartedAt = -1f;
+    }
+
+    private void Start()
+    {
         if (previewImage != null)
         {
             webCamTexture = new WebCamTexture();
-            if (webCamTexture != null)
-            {
-                previewImage.texture = webCamTexture;
-                webCamTexture.Play();
-                Debug.Log("Webcam texture initialized and playing.");
-            }
-            else
-            {
-                Debug.LogError("Failed to create WebCamTexture.");
-            }
+            previewImage.texture = webCamTexture;
+            webCamTexture.Play();
+            LogDebug("Optional webcam preview initialized.");
         }
 
         if (handLandmarkerRunner == null)
         {
-            Debug.LogError("HandLandmarkerRunner reference missing! Drag from HandDetectionSystem in Hierarchy.");
+            Debug.LogError("HandLandmarkerRunner reference missing on HandTracker.");
         }
-        else
+
+        if (gameManager == null)
         {
-            Debug.Log("HandLandmarkerRunner reference found.");
+            Debug.LogError("GameManager reference missing on HandTracker.");
         }
     }
 
-    void Update()
+    private void Update()
     {
-        bool handsDetected = false;
-
-        // Reset hand states
         bool leftHandFound = false;
         bool rightHandFound = false;
 
-        // Check MediaPipe hand detection
         if (handLandmarkerRunner != null)
         {
-            var result = GetHandLandmarkerResult();
-            Debug.Log($"HandLandmarkerResult detected: {result.handLandmarks?.Count ?? 0} hands");
+            HandLandmarkerResult result = handLandmarkerRunner.LatestResult;
+            int handCount = result.handLandmarks?.Count ?? 0;
 
-            if (result.handLandmarks != null && result.handLandmarks.Count > 0)
+            for (int i = 0; i < handCount; i++)
             {
-                // Process each detected hand
-                if (result.handedness != null && result.handedness.Count > 0)
+                var landmarks = result.handLandmarks[i].landmarks;
+                if (landmarks == null || landmarks.Count < 21)
                 {
-                    for (int i = 0; i < result.handedness.Count && i < result.handLandmarks.Count; i++)
-                    {
-                        var handedness = result.handedness[i];
-                       if (handedness.categories != null && handedness.categories.Count > 0)
-{
-    var classification = handedness.categories[0];
-                            string handLabel = classification.categoryName;
-
-                            Debug.Log($"Hand {i}: {handLabel} (confidence: {classification.score:F2})");
-
-                            var handLandmarks = result.handLandmarks[i];
-                            var landmarks = handLandmarks.landmarks;
-
-                            // Calculate hand position
-                            var wrist = landmarks[0];
-                            float ux = wrist.x * Screen.width;
-                            float uy = Screen.height * (1f - wrist.y);  // Flip Y for Unity
-                            Vector3 worldPos = Camera.main != null
-                                ? Camera.main.ScreenToWorldPoint(new Vector3(ux, uy, projectionDepth))
-                                : Vector3.zero;
-
-                            // Process based on hand type
-                            if (handLabel == "Left")
-                            {
-                                leftHandFound = true;
-                                leftHandPosition = worldPos;
-                                leftHandGesture = DetectGestureForHand(landmarks, "Left");
-                                HandleLeftHandGestures();
-                            }
-                            else if (handLabel == "Right")
-                            {
-                                rightHandFound = true;
-                                rightHandPosition = worldPos;
-                                rightHandGesture = DetectGestureForHand(landmarks, "Right");
-                                HandleRightHandGestures();
-                            }
-                        }
-                    }
-                    handsDetected = leftHandFound || rightHandFound;
+                    continue;
                 }
-            }
-            else
-            {
-                Debug.Log("No hand landmark lists detected.");
+
+                string label = GetHandLabel(result, i);
+                string role = ResolveHandRole(label, handCount, leftHandFound, rightHandFound, i);
+                Vector3 worldPos = LandmarkToWorld(GetPointerLandmark(landmarks));
+
+                if (role == "Left")
+                {
+                    leftHandFound = true;
+                    leftHandPosition = worldPos;
+                    UpdateLeftHand(landmarks, label);
+                }
+                else
+                {
+                    rightHandFound = true;
+                    rightHandPosition = worldPos;
+                    UpdateRightHand(landmarks, label);
+                }
             }
         }
 
-        // Reset hand states if hands not found
         if (!leftHandFound)
         {
-            if (leftHandPinching)
-            {
-                EndLeftHandPinch();
-            }
-            leftHandGesture = "open";
-            currentHandType = rightHandFound ? "Right" : "unknown";
+            UpdateLeftHandMissing();
         }
 
         if (!rightHandFound)
         {
-            rightHandGesture = "open";
-            currentHandType = leftHandFound ? "Left" : "unknown";
+            UpdateRightHandMissing();
         }
 
-        // Fallback to keyboard simulation
-        if (useKeyboardSimulation && !handsDetected)
+        if (useKeyboardSimulation && !leftHandFound && !rightHandFound && !leftPinchState.Active && !rightHoldState.Active)
         {
-            Vector3 mouseWorldPos = Camera.main != null
-                ? Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, projectionDepth))
-                : Vector3.zero;
-
-            rightHandGesture = DetectKeyboardGesture();
-            rightHandPosition = mouseWorldPos;
-            HandleRightHandGestures();
+            UpdateKeyboardSimulation();
         }
     }
 
-
-    private HandLandmarkerResult GetHandLandmarkerResult()
+    private void UpdateLeftHand(List<NormalizedLandmark> landmarks, string label)
     {
-        if (handLandmarkerRunner != null)
+        bool wasActive = leftPinchState.Active;
+        bool rawPinch = UpdatePinchHysteresis(leftPinchState, GetDistance(landmarks[4], landmarks[8]));
+        bool stablePinch = UpdateStableHold(leftPinchState, rawPinch, out bool started, out bool ended);
+
+        if (started)
         {
-            return handLandmarkerRunner.LatestResult;
+            leftHandGesture = LeftPinchGesture;
+            StartLeftHandPinch();
+            LogDebug($"Left hand pinch started ({label}).");
         }
-        Debug.LogError("HandLandmarkerRunner is null, cannot get result.");
-        return new HandLandmarkerResult(); // Return default struct
-    }
-
-    private string DetectGesture(List<Mediapipe.Tasks.Components.Containers.NormalizedLandmark> landmarks, bool allowGrab)
-    {
-        if (landmarks == null || landmarks.Count < 21) // Ensure all 21 landmarks are present
+        else if (stablePinch)
         {
-            Debug.LogWarning("Insufficient landmarks for gesture detection.");
-            return "open";
+            leftHandGesture = LeftPinchGesture;
+            UpdateLeftHandPinch();
         }
-
-        // Pinch: Distance between thumb tip (4) and index tip (8) - Always allowed
-        float pinchDist = GetDistance(landmarks[4], landmarks[8]);
-        Debug.Log($"Pinch distance: {pinchDist}");
-        if (pinchDist < pinchThreshold) return "select";
-
-        // Fist: Only allowed if using right hand (or restriction is disabled)
-        if (allowGrab)
+        else if (ended || wasActive)
         {
-            float openness = CalculateOpenness(landmarks);
-            Debug.Log($"Openness: {openness}");
-            if (openness < fistThreshold) return "grab";
+            leftHandGesture = OpenGesture;
+            EndLeftHandPinch();
+            LogDebug($"Left hand pinch ended ({label}).");
         }
         else
         {
-            Debug.Log("Grab gesture ignored - not using right hand");
+            leftHandGesture = OpenGesture;
+        }
+    }
+
+    private void UpdateRightHand(List<NormalizedLandmark> landmarks, string label)
+    {
+        bool wasActive = rightHoldState.Active;
+        bool rawHold = UpdatePinchHysteresis(rightHoldState, GetDistance(landmarks[4], landmarks[8]));
+
+        if (useFistForGrab && (!restrictGrabToRightHand || label == "Right" || useSingleHandAsRightHand))
+        {
+            rawHold = rawHold || CalculateOpenness(landmarks) < fistThreshold;
         }
 
-        return "open";
-    }
+        bool stableHold = UpdateStableHold(rightHoldState, rawHold, out bool started, out bool ended);
 
-
-    private float GetDistance(NormalizedLandmark a, NormalizedLandmark b)
-    {
-        Vector2 posA = new Vector2(a.x, a.y);
-        Vector2 posB = new Vector2(b.x, b.y);
-        return Vector2.Distance(posA, posB);
-    }
-private float CalculateOpenness(List<NormalizedLandmark> landmarks)
-{
-    Vector2 wrist = new Vector2(landmarks[0].x, landmarks[0].y);
-    float dist = 0;
-    dist += Vector2.Distance(wrist, new Vector2(landmarks[4].x, landmarks[4].y));  // Thumb
-    dist += Vector2.Distance(wrist, new Vector2(landmarks[8].x, landmarks[8].y));  // Index
-    dist += Vector2.Distance(wrist, new Vector2(landmarks[12].x, landmarks[12].y)); // Middle
-    dist += Vector2.Distance(wrist, new Vector2(landmarks[16].x, landmarks[16].y)); // Ring
-    dist += Vector2.Distance(wrist, new Vector2(landmarks[20].x, landmarks[20].y)); // Pinky
-    return dist / 5f;
-}
-
-    private void HandleGestureStates(Vector3 handPos, bool allowGrab)
-    {
-        if (gameManager == null)
+        if (started)
         {
-            Debug.LogError("GameManager is null, cannot handle gesture.");
+            rightHandGesture = HandSelectGesture;
+            SendRightHandInput(HandSelectGesture);
+            LogDebug($"Right hand hold started ({label}).");
+        }
+        else if (stableHold)
+        {
+            rightHandGesture = HandSelectGesture;
+            SendRightHandInput(HandSelectGesture);
+        }
+        else if (ended || wasActive)
+        {
+            rightHandGesture = OpenGesture;
+            SendRightHandInput(HandPlaceGesture);
+            LogDebug($"Right hand hold ended ({label}).");
+        }
+        else
+        {
+            rightHandGesture = OpenGesture;
+        }
+    }
+
+    private void UpdateLeftHandMissing()
+    {
+        bool stillActive = UpdateMissingHold(leftPinchState, out bool ended);
+        if (stillActive)
+        {
             return;
         }
 
-        if (lastGesture == "open" && currentGesture != "open")
+        leftHandGesture = OpenGesture;
+        if (ended)
         {
-            Debug.Log($"Started gesture: {currentGesture} at {handPos} (Hand: {currentHandType})");
-            gameManager.HandleHandInput(handPos, currentGesture);
+            EndLeftHandPinch();
         }
-        else if (currentGesture != "open" && currentGesture == lastGesture)
-        {
-            if (currentGesture == "grab" && allowGrab)
-            {
-                gameManager.HandleHandInput(handPos, "grab");
-            }
-        }
-        else if (lastGesture != "open" && currentGesture == "open")
-        {
-            Debug.Log($"Ended gesture: {lastGesture} (Hand: {currentHandType})");
-            if (lastGesture == "grab" && allowGrab)
-            {
-                gameManager.HandleHandInput(handPos, "place");
-            }
-        }
-
-        lastGesture = currentGesture;
     }
 
+    private void UpdateRightHandMissing()
+    {
+        bool stillActive = UpdateMissingHold(rightHoldState, out bool ended);
+        if (stillActive)
+        {
+            return;
+        }
+
+        rightHandGesture = OpenGesture;
+        if (ended)
+        {
+            SendRightHandInput(HandPlaceGesture);
+        }
+    }
+
+    private bool UpdatePinchHysteresis(StableHoldState state, float pinchDistance)
+    {
+        float enterThreshold = GetPinchEnterThreshold();
+        float exitThreshold = Mathf.Max(GetPinchExitThreshold(), enterThreshold + 0.001f);
+
+        state.RawHeld = state.RawHeld
+            ? pinchDistance < exitThreshold
+            : pinchDistance < enterThreshold;
+
+        return state.RawHeld;
+    }
+
+    private bool UpdateStableHold(StableHoldState state, bool rawHeld, out bool started, out bool ended)
+    {
+        started = false;
+        ended = false;
+        state.MissingStartedAt = -1f;
+
+        float now = Time.time;
+
+        if (state.Active)
+        {
+            state.HoldStartedAt = -1f;
+
+            if (rawHeld)
+            {
+                state.ReleaseStartedAt = -1f;
+                return true;
+            }
+
+            if (state.ReleaseStartedAt < 0f)
+            {
+                state.ReleaseStartedAt = now;
+            }
+
+            if (now - state.ReleaseStartedAt >= releaseHoldTime)
+            {
+                ResetHoldState(state);
+                ended = true;
+                return false;
+            }
+
+            return true;
+        }
+
+        state.ReleaseStartedAt = -1f;
+
+        if (!rawHeld)
+        {
+            state.HoldStartedAt = -1f;
+            return false;
+        }
+
+        if (state.HoldStartedAt < 0f)
+        {
+            state.HoldStartedAt = now;
+        }
+
+        if (now - state.HoldStartedAt < pinchHoldTime)
+        {
+            return false;
+        }
+
+        state.Active = true;
+        state.HoldStartedAt = -1f;
+        started = true;
+        return true;
+    }
+
+    private bool UpdateMissingHold(StableHoldState state, out bool ended)
+    {
+        ended = false;
+        state.RawHeld = false;
+        state.HoldStartedAt = -1f;
+        state.ReleaseStartedAt = -1f;
+
+        if (!state.Active)
+        {
+            state.MissingStartedAt = -1f;
+            return false;
+        }
+
+        float now = Time.time;
+        if (state.MissingStartedAt < 0f)
+        {
+            state.MissingStartedAt = now;
+        }
+
+        if (now - state.MissingStartedAt < trackingLossGraceTime)
+        {
+            return true;
+        }
+
+        ResetHoldState(state);
+        ended = true;
+        return false;
+    }
+
+    private void ResetHoldState(StableHoldState state)
+    {
+        state.RawHeld = false;
+        state.Active = false;
+        state.HoldStartedAt = -1f;
+        state.ReleaseStartedAt = -1f;
+        state.MissingStartedAt = -1f;
+    }
+
+    private float GetPinchEnterThreshold()
+    {
+        return pinchEnterThreshold > 0f ? pinchEnterThreshold : pinchThreshold;
+    }
+
+    private float GetPinchExitThreshold()
+    {
+        return pinchExitThreshold > 0f ? pinchExitThreshold : pinchThreshold * 1.5f;
+    }
+
+    private string GetHandLabel(HandLandmarkerResult result, int index)
+    {
+        if (result.handedness == null || index >= result.handedness.Count)
+        {
+            return string.Empty;
+        }
+
+        var handedness = result.handedness[index];
+        if (handedness.categories == null || handedness.categories.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return handedness.categories[0].categoryName;
+    }
+
+    private string ResolveHandRole(string label, int handCount, bool leftHandFound, bool rightHandFound, int index)
+    {
+        if (useSingleHandAsRightHand && handCount == 1)
+        {
+            return "Right";
+        }
+
+        if (swapHandRoles)
+        {
+            if (label == "Left")
+            {
+                label = "Right";
+            }
+            else if (label == "Right")
+            {
+                label = "Left";
+            }
+        }
+
+        if (label == "Left" && !leftHandFound)
+        {
+            return "Left";
+        }
+
+        if (label == "Right" && !rightHandFound)
+        {
+            return "Right";
+        }
+
+        if (!rightHandFound)
+        {
+            return "Right";
+        }
+
+        if (!leftHandFound)
+        {
+            return "Left";
+        }
+
+        return index == 0 ? "Right" : "Left";
+    }
+
+    private NormalizedLandmark GetPointerLandmark(List<NormalizedLandmark> landmarks)
+    {
+        return useIndexTipForPointer && landmarks.Count > 8 ? landmarks[8] : landmarks[0];
+    }
+
+    private Vector3 LandmarkToWorld(NormalizedLandmark landmark)
+    {
+        if (Camera.main == null)
+        {
+            return Vector3.zero;
+        }
+
+        float normalizedX = mirrorInputX ? 1f - landmark.x : landmark.x;
+        Vector3 screenPoint = new Vector3(
+            normalizedX * Screen.width,
+            (1f - landmark.y) * Screen.height,
+            projectionDepth
+        );
+
+        return Camera.main.ScreenToWorldPoint(screenPoint);
+    }
+
+    private float GetDistance(NormalizedLandmark a, NormalizedLandmark b)
+    {
+        return Vector2.Distance(new Vector2(a.x, a.y), new Vector2(b.x, b.y));
+    }
+
+    private float CalculateOpenness(List<NormalizedLandmark> landmarks)
+    {
+        Vector2 wrist = new Vector2(landmarks[0].x, landmarks[0].y);
+        float distance = 0f;
+        distance += Vector2.Distance(wrist, new Vector2(landmarks[4].x, landmarks[4].y));
+        distance += Vector2.Distance(wrist, new Vector2(landmarks[8].x, landmarks[8].y));
+        distance += Vector2.Distance(wrist, new Vector2(landmarks[12].x, landmarks[12].y));
+        distance += Vector2.Distance(wrist, new Vector2(landmarks[16].x, landmarks[16].y));
+        distance += Vector2.Distance(wrist, new Vector2(landmarks[20].x, landmarks[20].y));
+        return distance / 5f;
+    }
+
+    private void SendRightHandInput(string gesture)
+    {
+        if (gameManager == null)
+        {
+            return;
+        }
+
+        gameManager.HandleHandInput(rightHandPosition, gesture);
+    }
+
+    private void UpdateKeyboardSimulation()
+    {
+        rightHandPosition = Camera.main != null
+            ? Camera.main.ScreenToWorldPoint(new Vector3(Input.mousePosition.x, Input.mousePosition.y, projectionDepth))
+            : Vector3.zero;
+
+        string keyboardGesture = DetectKeyboardGesture();
+        if (keyboardGesture != OpenGesture && gameManager != null)
+        {
+            gameManager.HandleHandInput(rightHandPosition, keyboardGesture);
+        }
+    }
 
     private string DetectKeyboardGesture()
     {
-        if (Input.GetKey(KeyCode.Space)) return "select";
-        else if (Input.GetKey(KeyCode.G)) return "grab";
-        else if (Input.GetKey(KeyCode.P)) return "place";
-        return "open";
+        if (Input.GetKey(KeyCode.Space)) return KeyboardSelectGesture;
+        if (Input.GetKey(KeyCode.G)) return KeyboardGrabGesture;
+        if (Input.GetKey(KeyCode.P)) return KeyboardPlaceGesture;
+        return OpenGesture;
     }
 
-    void OnGUI()
+    private void StartLeftHandPinch()
     {
-        if (showInstructions)
+        if (dragRotate == null)
         {
-            GUIStyle boxStyle = new GUIStyle(GUI.skin.box) { fontSize = 12 };
-            GUIStyle labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 11 };
-
-            GUI.Box(new UnityEngine.Rect(10, 250, 320, 160), "Hand Tracker - Gestures", boxStyle);
-            GUI.Label(new UnityEngine.Rect(20, 275, 300, 20), "Pinch (thumb+index close) = Select from UI", labelStyle);
-            GUI.Label(new UnityEngine.Rect(20, 295, 300, 20), "Fist = Grab and drag landmark", labelStyle);
-            GUI.Label(new UnityEngine.Rect(20, 315, 300, 20), "Open hand = Place landmark", labelStyle);
-            GUI.Label(new UnityEngine.Rect(20, 335, 300, 20), $"Current gesture: {currentGesture}", labelStyle);
-            GUI.Label(new UnityEngine.Rect(20, 355, 300, 20), $"Last gesture: {lastGesture}", labelStyle);
-            if (useKeyboardSimulation) GUI.Label(new UnityEngine.Rect(20, 375, 300, 20), "Fallback: SPACE/G/P keys", labelStyle);
+            return;
         }
-    }
 
-    void OnDestroy()
-    {
-        if (webCamTexture != null) webCamTexture.Stop();
-    }
-    
-    private string DetectGestureForHand(List<Mediapipe.Tasks.Components.Containers.NormalizedLandmark> landmarks, string handType)
-{
-    if (landmarks == null || landmarks.Count < 21)
-    {
-        Debug.LogWarning($"Insufficient landmarks for {handType} hand gesture detection.");
-        return "open";
-    }
-
-    // Pinch: Distance between thumb tip (4) and index tip (8)
-    float pinchDist = GetDistance(landmarks[4], landmarks[8]);
-    
-    if (handType == "Left")
-    {
-        // Left hand: Only detect pinch for rotation
-        Debug.Log($"Left hand pinch distance: {pinchDist}");
-        if (pinchDist < pinchThreshold) return "pinch";
-    }
-    else if (handType == "Right")
-    {
-        // Right hand: Detect pinch for selection and fist for grab
-        Debug.Log($"Right hand pinch distance: {pinchDist}");
-        if (pinchDist < pinchThreshold) return "select";
-        
-        float openness = CalculateOpenness(landmarks);
-        Debug.Log($"Right hand openness: {openness}");
-        if (openness < fistThreshold) return "grab";
-    }
-
-    return "open";
-}
-
-private void HandleLeftHandGestures()
-{
-    // Left hand pinch for globe rotation
-    if (lastLeftHandGesture == "open" && leftHandGesture == "pinch")
-    {
-        StartLeftHandPinch();
-    }
-    else if (leftHandGesture == "pinch" && leftHandPinching)
-    {
-        UpdateLeftHandPinch();
-    }
-    else if (lastLeftHandGesture == "pinch" && leftHandGesture == "open")
-    {
-        EndLeftHandPinch();
-    }
-    
-    lastLeftHandGesture = leftHandGesture;
-}
-
-private void HandleRightHandGestures()
-{
-    // Right hand gestures for landmark placement (existing logic)
-    if (lastRightHandGesture == "open" && rightHandGesture != "open")
-    {
-        Debug.Log($"Started right hand gesture: {rightHandGesture} at {rightHandPosition}");
-        if (gameManager != null)
-        {
-            gameManager.HandleHandInput(rightHandPosition, rightHandGesture);
-        }
-    }
-    else if (rightHandGesture != "open" && rightHandGesture == lastRightHandGesture)
-    {
-        if (rightHandGesture == "grab" && gameManager != null)
-        {
-            gameManager.HandleHandInput(rightHandPosition, "grab");
-        }
-    }
-    else if (lastRightHandGesture != "open" && rightHandGesture == "open")
-    {
-        Debug.Log($"Ended right hand gesture: {lastRightHandGesture}");
-        if (lastRightHandGesture == "grab" && gameManager != null)
-        {
-            gameManager.HandleHandInput(rightHandPosition, "place");
-        }
-    }
-    
-    lastRightHandGesture = rightHandGesture;
-}
-
-private void StartLeftHandPinch()
-{
-    if (dragRotate != null)
-    {
-        leftHandPinching = true;
         dragRotate.StartHandRotation(leftHandPosition);
-        Debug.Log("Started left hand pinch rotation");
     }
-}
 
-private void UpdateLeftHandPinch()
-{
-    if (dragRotate != null && leftHandPinching)
+    private void UpdateLeftHandPinch()
     {
-        dragRotate.UpdateHandRotation(leftHandPosition);
+        if (dragRotate != null)
+        {
+            dragRotate.UpdateHandRotation(leftHandPosition);
+        }
     }
-}
 
-private void EndLeftHandPinch()
-{
-    if (dragRotate != null)
+    private void EndLeftHandPinch()
     {
-        leftHandPinching = false;
-        dragRotate.EndHandRotation();
-        Debug.Log("Ended left hand pinch rotation");
+        if (dragRotate != null)
+        {
+            dragRotate.EndHandRotation();
+        }
     }
-}
 
+    private void OnGUI()
+    {
+        if (!showInstructions)
+        {
+            return;
+        }
+
+        GUIStyle boxStyle = new GUIStyle(GUI.skin.box) { fontSize = 12 };
+        GUIStyle labelStyle = new GUIStyle(GUI.skin.label) { fontSize = 11 };
+
+        GUI.Box(new UnityEngine.Rect(10, 250, 320, 160), "Hand Tracker - Gestures", boxStyle);
+        GUI.Label(new UnityEngine.Rect(20, 275, 300, 20), "Hold pinch = select and drag", labelStyle);
+        GUI.Label(new UnityEngine.Rect(20, 295, 300, 20), "Open hand = place after short delay", labelStyle);
+        GUI.Label(new UnityEngine.Rect(20, 315, 300, 20), "Left pinch = rotate globe", labelStyle);
+        GUI.Label(new UnityEngine.Rect(20, 335, 300, 20), $"Right gesture: {rightHandGesture}", labelStyle);
+        GUI.Label(new UnityEngine.Rect(20, 355, 300, 20), $"Left gesture: {leftHandGesture}", labelStyle);
+        if (useKeyboardSimulation)
+        {
+            GUI.Label(new UnityEngine.Rect(20, 375, 300, 20), "Fallback: SPACE/G/P keys", labelStyle);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (webCamTexture != null)
+        {
+            webCamTexture.Stop();
+        }
+    }
+
+    private void LogDebug(string message)
+    {
+        if (showHandDebugInfo)
+        {
+            Debug.Log(message);
+        }
+    }
 }

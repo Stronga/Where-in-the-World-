@@ -18,6 +18,8 @@ public class DragRotate : MonoBehaviour
     [Header("Hand Gesture Control")]
     [SerializeField] private bool handGestureEnabled = true;
     [SerializeField] private float handRotationSensitivity = 15f;
+    [SerializeField] private float handRotationSmoothTime = 0.08f;
+    [SerializeField] private float handReleaseEaseDuration = 0.2f;
 
     private Vector3 lastMousePosition;
     private Vector3 lastHandPosition;
@@ -27,9 +29,14 @@ public class DragRotate : MonoBehaviour
     private float distanceVelocity = 0f;
     private float defaultDistance;
     private bool rotationEnabled = true;
+    private bool mouseInputEnabled = true;
     private bool autoRotationEnabled = false;
     private bool hasUserInteracted = false;
     private bool isHandRotating = false;
+    private Vector3 smoothedHandDelta = Vector3.zero;
+    private Vector3 handDeltaVelocity = Vector3.zero;
+    private Vector3 releaseHandDelta = Vector3.zero;
+    private float releaseHandEaseRemaining = 0f;
 
 
     void Start()
@@ -55,7 +62,7 @@ public class DragRotate : MonoBehaviour
                     && EventSystem.current.IsPointerOverGameObject();
 
         // Check for user interaction
-        if (!hasUserInteracted && !overUI)
+        if (mouseInputEnabled && !hasUserInteracted && !overUI)
         {
             if (Input.GetMouseButtonDown(0) || Input.GetMouseButton(0) ||
                 Input.GetAxis("Mouse ScrollWheel") != 0)
@@ -71,8 +78,16 @@ public class DragRotate : MonoBehaviour
             targetRotation *= Quaternion.AngleAxis(autoRotationSpeed * Time.deltaTime, Vector3.up);
         }
 
+        if (!isHandRotating && releaseHandEaseRemaining > 0f && rotationEnabled && handGestureEnabled)
+        {
+            float duration = Mathf.Max(handReleaseEaseDuration, 0.001f);
+            float ease = releaseHandEaseRemaining / duration;
+            ApplyHandRotation(releaseHandDelta * ease * (Time.deltaTime / duration));
+            releaseHandEaseRemaining = Mathf.Max(0f, releaseHandEaseRemaining - Time.deltaTime);
+        }
+
         // Manual rotation
-        if (rotationEnabled && !overUI && hasUserInteracted)
+        if (rotationEnabled && mouseInputEnabled && !overUI && hasUserInteracted)
         {
             if (Input.GetMouseButtonDown(0))
                 lastMousePosition = Input.mousePosition;
@@ -95,7 +110,7 @@ public class DragRotate : MonoBehaviour
 
         // Zoom functionality
         float scroll = Input.GetAxis("Mouse ScrollWheel");
-        if (scroll != 0 && !overUI)
+        if (rotationEnabled && mouseInputEnabled && scroll != 0 && !overUI)
         {
             targetDistance = Mathf.Clamp(
                 targetDistance - scroll * zoomSensitivity,
@@ -126,6 +141,19 @@ public class DragRotate : MonoBehaviour
     public void SetRotationEnabled(bool enabled)
     {
         rotationEnabled = enabled;
+        if (!enabled && isHandRotating)
+        {
+            EndHandRotation();
+        }
+    }
+
+    public void SetMouseInputEnabled(bool enabled)
+    {
+        mouseInputEnabled = enabled;
+        if (!enabled)
+        {
+            lastMousePosition = Input.mousePosition;
+        }
     }
 
     public void StartAutoRotation()
@@ -145,12 +173,16 @@ public class DragRotate : MonoBehaviour
         autoRotationEnabled = false;
     }
     
-    public void StartHandRotation(Vector3 handPosition)
+public void StartHandRotation(Vector3 handPosition)
 {
     if (!handGestureEnabled || !rotationEnabled) return;
     
     isHandRotating = true;
     lastHandPosition = handPosition;
+    smoothedHandDelta = Vector3.zero;
+    handDeltaVelocity = Vector3.zero;
+    releaseHandDelta = Vector3.zero;
+    releaseHandEaseRemaining = 0f;
     hasUserInteracted = true;
     autoRotationEnabled = false;
     
@@ -161,18 +193,15 @@ public void UpdateHandRotation(Vector3 handPosition)
 {
     if (!isHandRotating || !handGestureEnabled || !rotationEnabled) return;
     
-    Vector3 delta = handPosition - lastHandPosition;
-    
-    // Convert world space delta to rotation
-    float rotX = -delta.y * handRotationSensitivity;
-    float rotY = -delta.x * handRotationSensitivity;
-    
-    targetRotation *= Quaternion.AngleAxis(rotY, Vector3.up);
-    targetRotation *= Quaternion.AngleAxis(rotX, Vector3.right);
-    
+    Vector3 rawDelta = handPosition - lastHandPosition;
+    smoothedHandDelta = handRotationSmoothTime > 0f
+        ? Vector3.SmoothDamp(smoothedHandDelta, rawDelta, ref handDeltaVelocity, handRotationSmoothTime)
+        : rawDelta;
+
+    ApplyHandRotation(smoothedHandDelta);
+    releaseHandDelta = smoothedHandDelta;
+    releaseHandEaseRemaining = handReleaseEaseDuration;
     lastHandPosition = handPosition;
-    
-    Debug.Log($"Hand rotation delta: {delta}");
 }
 
 public void EndHandRotation()
@@ -181,6 +210,15 @@ public void EndHandRotation()
     
     isHandRotating = false;
     Debug.Log("Ended hand rotation");
+}
+
+private void ApplyHandRotation(Vector3 delta)
+{
+    float rotX = -delta.y * handRotationSensitivity;
+    float rotY = -delta.x * handRotationSensitivity;
+
+    targetRotation *= Quaternion.AngleAxis(rotY, Vector3.up);
+    targetRotation *= Quaternion.AngleAxis(rotX, Vector3.right);
 }
 
 public bool IsHandRotating()

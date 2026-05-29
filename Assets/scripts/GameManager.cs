@@ -137,17 +137,26 @@ public bool IsHandRotatingGlobe()
 
 public void HandleHandInput(Vector3 handPosition, string gesture)
 {
-    Debug.Log($"Gesture: {gesture} at position: {handPosition}");
-    Debug.Log($"Hand Input: Gesture={gesture}, Pos={handPosition}");
-    
     switch (gesture)
         {
+            case "handSelect":
+                HandleHandSelection(handPosition, true);
+                break;
+
+            case "handGrab":
+                HandleHandGrab(handPosition, true);
+                break;
+
+            case "handPlace":
+                HandleHandPlace(handPosition);
+                break;
+
             case "select":
-                HandleHandSelection(handPosition);
+                HandleHandSelection(handPosition, false);
                 break;
 
             case "grab":
-                HandleHandGrab(handPosition);
+                HandleHandGrab(handPosition, false);
                 break;
 
             case "place":
@@ -156,13 +165,28 @@ public void HandleHandInput(Vector3 handPosition, string gesture)
         }
 }
 
-void HandleHandSelection(Vector3 handPos)
+void HandleHandSelection(Vector3 handPos, bool requirePointerOverLandmark = false)
 {
-    Debug.Log($"HandleHandSelection called - Current state: {state}");
+    Vector2 screenPos = WorldToScreenPosition(handPos);
+
+    if (state == GameState.Dragging)
+    {
+        UpdateDrag(screenPos, true);
+        return;
+    }
     
     if (state != GameState.Idle) 
     {
-        Debug.Log($"Selection blocked - state is {state}, need Idle state");
+        return;
+    }
+
+    if (TryBeginHandDragFromPointer(screenPos))
+    {
+        return;
+    }
+
+    if (requirePointerOverLandmark && !IsScreenPointInsideLandmarkPanel(screenPos))
+    {
         return;
     }
     
@@ -223,7 +247,7 @@ void HandleHandSelection(Vector3 handPos)
         scrollCtrl.SetAndStickItem(closestItem);
         
         // Start dragging the landmark
-        BeginDrag(closestHandler.landmark, closestItem.gameObject);
+        BeginHandDrag(closestHandler.landmark, closestItem.gameObject, screenPos);
         return;
     }
     
@@ -231,31 +255,33 @@ void HandleHandSelection(Vector3 handPos)
 }
 
 
-void HandleHandGrab(Vector3 handPos)
+void HandleHandGrab(Vector3 handPos, bool requirePointerOverLandmark = false)
 {
-    Debug.Log($"HandleHandGrab called - Current state: {state}");
+    Vector2 screenPos = WorldToScreenPosition(handPos);
     
     if (state == GameState.Idle)
     {
         // If not dragging, try to select a landmark
-        HandleHandSelection(handPos);
+        HandleHandSelection(handPos, requirePointerOverLandmark);
+        if (state == GameState.Dragging)
+        {
+            UpdateDrag(screenPos, true);
+        }
     }
     else if (state == GameState.Dragging)
     {
         // If already dragging, update the drag position
-        Vector3 screenPos = Camera.main.WorldToScreenPoint(handPos);
-        UpdateDrag(screenPos);
+        UpdateDrag(screenPos, true);
     }
 }
 
 void HandleHandPlace(Vector3 handPos)
 {
-    Debug.Log($"HandleHandPlace called - Current state: {state}");
-    
     if (state == GameState.Dragging)
     {
         // Place the landmark at the current position
         Debug.Log("✅ Placing landmark with hand gesture");
+        UpdateDrag(WorldToScreenPosition(handPos), true);
         EndDrag();
     }
     else
@@ -364,13 +390,24 @@ private void PopulateLandmarkPanel()
 
     // Force the layout to rebuild so the carousel script sees the new children
     LayoutRebuilder.ForceRebuildLayoutImmediate(landmarkContent);
+    StartCoroutine(RefreshMzToolsScrollAfterDestroy());
 }
 
    public void BeginDrag(Landmark lm, GameObject button)
 {
+    BeginDrag(lm, button, Input.mousePosition, false);
+}
+
+private void BeginHandDrag(Landmark lm, GameObject button, Vector2 screenPos)
+{
+    BeginDrag(lm, button, screenPos, true);
+}
+
+private void BeginDrag(Landmark lm, GameObject button, Vector2 startScreenPos, bool allowWhileHandRotating)
+{
     if (state != GameState.Idle) return;
 
-    if (IsHandRotatingGlobe())
+    if (!allowWhileHandRotating && IsHandRotatingGlobe())
     {
         Debug.Log("Cannot start landmark drag - globe is being rotated");
         return;
@@ -381,10 +418,10 @@ private void PopulateLandmarkPanel()
     currentLandmark = Instantiate(lm.prefab, landmarkContainer);
     currentLandmark.transform.position = Vector3.one * 1000f;
 
-    dragStartPos = Input.mousePosition;
+    dragStartPos = startScreenPos;
     hasMovedEnough = false;
 
-    dragRotate.SetRotationEnabled(false);
+    dragRotate.SetMouseInputEnabled(false);
     landmarkCanvasGroup.blocksRaycasts = false;
     hintText.text = string.Empty;
 
@@ -394,23 +431,148 @@ private void PopulateLandmarkPanel()
     state = GameState.Dragging;
 }
 
-    public void UpdateDrag(Vector2 screenPos)
+    public void UpdateDrag(Vector2 screenPos, bool forceMove = false)
     {
         if (state != GameState.Dragging || currentLandmark == null) return;
+
+        if (forceMove)
+            hasMovedEnough = true;
 
         if (!hasMovedEnough && Vector2.Distance(screenPos, dragStartPos) > dragThreshold)
             hasMovedEnough = true;
 
         if (hasMovedEnough)
         {
-            var ray = Camera.main.ScreenPointToRay(screenPos);
-            if (Physics.Raycast(ray, out var hit) && (hit.transform == globe || hit.transform.IsChildOf(globe)))
+            if (TryGetGlobeSurfacePoint(screenPos, out Vector3 globePoint))
             {
-                var dir = (hit.point - globe.position).normalized;
+                var dir = (globePoint - globe.position).normalized;
                 currentLandmark.transform.position = globe.position + dir * (globeRadius + 0.1f);
                 currentLandmark.transform.up = dir;
             }
         }
+    }
+
+    private Vector2 WorldToScreenPosition(Vector3 worldPos)
+    {
+        if (Camera.main == null)
+        {
+            return Vector2.zero;
+        }
+
+        return Camera.main.WorldToScreenPoint(worldPos);
+    }
+
+    private bool TryBeginHandDragFromPointer(Vector2 screenPos)
+    {
+        if (EventSystem.current == null)
+        {
+            return false;
+        }
+
+        var pointerData = new PointerEventData(EventSystem.current)
+        {
+            position = screenPos
+        };
+        var results = new List<RaycastResult>();
+        EventSystem.current.RaycastAll(pointerData, results);
+
+        foreach (var result in results)
+        {
+            LandmarkDragHandler handler = result.gameObject.GetComponentInParent<LandmarkDragHandler>();
+            if (handler == null || handler.landmark == null)
+            {
+                continue;
+            }
+
+            Debug.Log($"Selected landmark from hand pointer: {handler.landmark.name}");
+            BeginHandDrag(handler.landmark, handler.gameObject, screenPos);
+            return true;
+        }
+
+        return false;
+    }
+
+    private bool IsScreenPointInsideLandmarkPanel(Vector2 screenPos)
+    {
+        if (landmarkPanel == null)
+        {
+            return false;
+        }
+
+        Canvas canvas = landmarkPanel.GetComponentInParent<Canvas>();
+        Camera eventCamera = null;
+        if (canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay)
+        {
+            eventCamera = canvas.worldCamera != null ? canvas.worldCamera : Camera.main;
+        }
+
+        return RectTransformUtility.RectangleContainsScreenPoint(landmarkPanel, screenPos, eventCamera);
+    }
+
+    private bool TryGetGlobeSurfacePoint(Vector2 screenPos, out Vector3 globePoint)
+    {
+        globePoint = Vector3.zero;
+
+        if (Camera.main == null || globe == null)
+        {
+            return false;
+        }
+
+        Ray ray = Camera.main.ScreenPointToRay(screenPos);
+        RaycastHit[] hits = Physics.RaycastAll(ray);
+        System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
+
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.transform == null)
+            {
+                continue;
+            }
+
+            if (hit.transform == globe || hit.transform.IsChildOf(globe))
+            {
+                globePoint = hit.point;
+                return true;
+            }
+        }
+
+        return TryIntersectGlobe(ray, out globePoint);
+    }
+
+    private bool TryIntersectGlobe(Ray ray, out Vector3 globePoint)
+    {
+        globePoint = Vector3.zero;
+
+        if (globe == null)
+        {
+            return false;
+        }
+
+        float radius = Mathf.Max(globeRadius, 0.01f);
+        Vector3 offset = ray.origin - globe.position;
+        float b = Vector3.Dot(offset, ray.direction);
+        float c = Vector3.Dot(offset, offset) - radius * radius;
+        float discriminant = b * b - c;
+
+        if (discriminant < 0f)
+        {
+            return false;
+        }
+
+        float sqrtDiscriminant = Mathf.Sqrt(discriminant);
+        float distance = -b - sqrtDiscriminant;
+        if (distance < 0f)
+        {
+            distance = -b + sqrtDiscriminant;
+        }
+
+        if (distance < 0f)
+        {
+            return false;
+        }
+
+        globePoint = ray.GetPoint(distance);
+        return true;
     }
 
    public void EndDrag()
@@ -438,7 +600,7 @@ private void PopulateLandmarkPanel()
     ResetDrag();
 
     // Check if all landmarks are placed
-    if (scoreManager.GetScore() == landmarks.Count)
+    if (landmarks.Count == 0 || scoreManager.GetScore() == initialLandmarks.Count)
     {
         state = GameState.Complete;
         ShowGameSuccess();
@@ -595,7 +757,7 @@ private IEnumerator RefreshMzToolsScrollAfterDestroy()
         
         // Clear the internal items list
         var items = scrollCtrl.GetItems();
-        items.Clear();
+        items?.Clear();
         
         // Reload items from current children
         scrollCtrl.LoadItems();
@@ -639,7 +801,7 @@ private IEnumerator RefreshMzToolsScrollAfterDestroy()
 
     private void ResetDrag()
     {
-        dragRotate.SetRotationEnabled(true);
+        dragRotate.SetMouseInputEnabled(true);
         landmarkCanvasGroup.blocksRaycasts = true;
 
         currentLandmark = null;
@@ -704,7 +866,14 @@ private void StartOver()
     }
 
     // Repopulate the landmark panel
-    foreach (Transform child in landmarkButtonContainer)
+    Transform buttonParent = landmarkContent != null ? landmarkContent : landmarkButtonContainer;
+    if (buttonParent == null)
+    {
+        Debug.LogError("No landmark button container/content is assigned.");
+        return;
+    }
+
+    foreach (Transform child in buttonParent)
     {
         Destroy(child.gameObject);
     }
